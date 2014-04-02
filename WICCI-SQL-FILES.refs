@@ -1,0 +1,13 @@
+#schema sql
+#schema spi
+#schema tor
+tor-type.sql tor.so $M/spx.sql-out
+tor-meta-triggers.sql
+tor-schema.sql
+tor-code.sql
+tor-create.sql
+tor-test.sql
+tor.sql
+	%
+	rm -f $M/$@
+	ln $@ $M

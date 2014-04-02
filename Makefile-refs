@@ -1,0 +1,21 @@
+#  -*-Mode: makefile;-*-	Requires GNU Make
+# Copyright (c) 2005-2006, J. Greg Davidson.
+# You may use this file under the terms of the
+# GNU AFFERO GENERAL PUBLIC LICENSE 3.0
+# as specified in the file LICENSE.md included with this distribution.
+# All other use requires my permission in writing.
+
+# Makefile includes for building Typed Tagged References
+
+# schema=refs
+
+refs-all: Makefile.depends refs-sizes
+	make refs.sql-out
+refs-sizes.sql: refs-sizes
+	$M/refs-sizes psql-set > $M/$@
+refs-sizes: refs-sizes.c refs-sizes.h
+	$(CC) $(CFLAGS) -o $M/$@ $<
+refs.i: refs.c $(REFS_H)
+	$(CC) -E $(CFLAGS) -o $M/$@ -c $<
+refs.o: refs.c $(REFS_H)
+	$(CC) $(CFLAGS) -o $M/$@ -c $<

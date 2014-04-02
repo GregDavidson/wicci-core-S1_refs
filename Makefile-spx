@@ -1,0 +1,21 @@
+#  -*-Mode: makefile;-*-	Requires GNU Make.
+# Copyright (c) 2005-2010, J. Greg Davidson.
+# You may use this file under the terms of the
+# GNU AFFERO GENERAL PUBLIC LICENSE 3.0
+# as specified in the file LICENSE.md included with this distribution.
+# All other use requires my permission in writing.
+
+# Makefile includes for building the Server Programming eXtensions
+#schema=spx
+#include Makefile.spx
+
+spx.i: spx.c
+	$(CC) $(CFLAGS) -E $<  | grep -v '^#' | grep '.' | grep -v 'extern int no_such_variable;' | indent -kr -bad -bap -o $M/$@ -
+spx.o: spx.c spx.h debug.h spx-calls.h
+	$(CC) $(CFLAGS) -o $M/$@ -c $<
+spx.flow: spx.c spx.h debug.h
+	cflow $(SPX_INC) > $M/$@  $<
+spx.wolf: spx.c spx.h debug.h
+	cflow -r $(SPX_INC) > $M/$@  $<
+spx-test.o: spx-test.c spx.h debug.h
+	$(CC) $(CFLAGS) -o $M/$@ -c $<

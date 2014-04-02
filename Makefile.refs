@@ -1,0 +1,16 @@
+#  -*-Mode: makefile;-*-	Requires GNU Make
+# Copyright (c) 2005-2010, J. Greg Davidson.
+# You may use this file under the terms of the
+# GNU AFFERO GENERAL PUBLIC LICENSE 3.0
+# as specified in the file LICENSE.md included with this distribution.
+# All other use requires my permission in writing.
+
+# Makefile includes for building projects containing C Code
+# dependent an the Server Programming eXtensions
+
+include $(SpxDir)/Makefile.spx
+
+#PSQL := $(PSQL) $(shell $(RefsDir)/refs-sizes psql)
+REFS_H := $(SPX_H) refs.h refs-sizes.h
+vpath %.h $(RefsDir)
+REFS_INC := $(SPX_INC) -I$(RefsDir)

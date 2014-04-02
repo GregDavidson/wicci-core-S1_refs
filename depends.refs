@@ -1,0 +1,21 @@
+# #set show-input
+# #set debug
+# make-depends -this-file- -some-wicci-sql-depends-file-
+# #set no-comment-lines
+# don't use test file as dependency for the next file
+tor-type.sql-out: tor-type.sql tor.so $M/spx.sql-out
+	$(PSQL) --variable quoted_file_name="'tor-type.sql'" --variable top_schema='tor' --variable quoted_top_schema="'tor'" --variable schema_path='tor,spi,sql,public' --variable quoted_first_so="'tor.so'" $(DB) -f $< 2>&1 | tee $@-err && mv $@-err $@
+tor-meta-triggers.sql-out: tor-meta-triggers.sql tor-type.sql-out
+	$(PSQL) --variable quoted_file_name="'tor-meta-triggers.sql'" --variable top_schema='tor' --variable quoted_top_schema="'tor'" --variable schema_path='tor,spi,sql,public' $(DB) -f $< 2>&1 | tee $@-err && mv $@-err $@
+tor-schema.sql-out: tor-schema.sql tor-meta-triggers.sql-out
+	$(PSQL) --variable quoted_file_name="'tor-schema.sql'" --variable top_schema='tor' --variable quoted_top_schema="'tor'" --variable schema_path='tor,spi,sql,public' $(DB) -f $< 2>&1 | tee $@-err && mv $@-err $@
+tor-code.sql-out: tor-code.sql tor-schema.sql-out
+	$(PSQL) --variable quoted_file_name="'tor-code.sql'" --variable top_schema='tor' --variable quoted_top_schema="'tor'" --variable schema_path='tor,spi,sql,public' $(DB) -f $< 2>&1 | tee $@-err && mv $@-err $@
+tor-create.sql-out: tor-create.sql tor-code.sql-out
+	$(PSQL) --variable quoted_file_name="'tor-create.sql'" --variable top_schema='tor' --variable quoted_top_schema="'tor'" --variable schema_path='tor,spi,sql,public' $(DB) -f $< 2>&1 | tee $@-err && mv $@-err $@
+tor-test.sql-out: tor-test.sql tor-create.sql-out
+	$(PSQL) --variable quoted_file_name="'tor-test.sql'" --variable top_schema='tor' --variable quoted_top_schema="'tor'" --variable schema_path='tor,spi,sql,public' $(DB) -f $< 2>&1 | tee $@-err && mv $@-err $@
+tor.sql-out: tor.sql tor-test.sql-out
+	$(PSQL) --variable quoted_file_name="'tor.sql'" --variable top_schema='tor' --variable quoted_top_schema="'tor'" --variable schema_path='tor,spi,sql,public' $(DB) -f $< 2>&1 | tee $@-err && mv $@-err $@
+	rm -f $M/$@
+	ln $@ $M

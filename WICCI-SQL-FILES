@@ -1,0 +1,18 @@
+#schema S0_sql
+#schema S1_refs
+spx-schema.sql s0-lib.sql-out
+spx-code.sql spx.so
+#schema spx_test
+#spx-test.sql spx-test.so
+spx-test.sql spx.so
+spx.sql
+#refs-type.sql refs.so spx.sql-out
+refs-type.sql spx.so spx.sql-out
+refs-meta-triggers.sql
+refs-schema.sql
+refs-code.sql
+refs-naming.sql
+refs-create-types.sql
+refs-create.sql
+refs-test.sql
+s1-refs.sql
