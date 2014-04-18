@@ -32,7 +32,7 @@ RETURNS meta_funcs AS $$
 		_returns := $3,
 		_stability := 'meta__immutable',
 		_strict := 'meta__strict', -- operators are normally strict in pgsql
-		_body := 'SELECT ' || quote_ident('ref_' || $2) || '($1::refs, $2::refs)',
+		_body := 'SELECT ' || quote_ident('ref_' || $2) || '($1::s1_refs.refs, $2::s1_refs.refs)',
 		_ := 'gen_ref_op_func'
 	) FROM meta_arg($1) arg
 $$ LANGUAGE SQL IMMUTABLE;
@@ -40,8 +40,9 @@ COMMENT ON FUNCTION gen_ref_op_func(regtype, text, regtype) IS
 $_$ E.g.: meta_func_text(gen_ref_op_func('env_refs', 'cmp', 'int4')) -->
  CREATE OR REPLACE
  FUNCTION env_cmp(env_refs, env_refs) RETURNS int4 AS $$
-	 SELECT ref_cmp($1::refs, $2::refs)
+	 SELECT ref_cmp($1::s1_refs.refs, $2::s1_refs.refs)
  $$ LANGUAGE SQL IMMUTABLE;
+ -- Note the s1_refs schema qualifications.
 $_$;
 
 -- gen_ref_operator(type, name, op, commutator, negator, sel)

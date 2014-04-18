@@ -103,7 +103,6 @@ CREATE OR REPLACE FUNCTION try_create_ref_downcast_func(
 		_name := prefix_try_func_name($1,$2,$3,$4),
 		_args := ARRAY[meta_arg('refs', '_ref')],
 		_returns := _type,
-		_stability := 'meta__immutable',
 		_strict := 'meta__strict',
 		_body := 'SELECT ref FROM ' || _class || ' WHERE ref::refs = $1',
 		_by := 'try_create_ref_downcast_func(

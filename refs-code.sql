@@ -46,7 +46,7 @@ CREATE OR REPLACE
 FUNCTION ref_type(refs) RETURNS regtype AS $$
 	SELECT type_ FROM typed_object_classes
 	WHERE tag_ = ref_tag($1)
-$$ LANGUAGE SQL IMMUTABLE;
+$$ LANGUAGE SQL STABLE;
 COMMENT ON FUNCTION ref_type(refs) IS '
 Returns the oid of the class associated with a ref';
 
@@ -54,7 +54,7 @@ CREATE OR REPLACE
 FUNCTION ref_table(refs) RETURNS regclass AS $$
 	SELECT class_ FROM typed_object_classes
 	WHERE tag_ = ref_tag($1)
-$$ LANGUAGE SQL IMMUTABLE;
+$$ LANGUAGE SQL STABLE;
 COMMENT ON FUNCTION ref_table(refs) IS '
 Returns the oid of the class associated with a ref';
 
@@ -84,7 +84,7 @@ CREATE OR REPLACE FUNCTION unchecked_ref(
 		unchecked_ref_from_tag_id(type_class_tag($1, $2), $3),
 		'unchecked_ref(regtype, regclass, ref_ids)'
 	)
-$$ LANGUAGE SQL IMMUTABLE;
+$$ LANGUAGE SQL STABLE;
 
 -- * type refs and functions
 
@@ -252,7 +252,7 @@ FUNCTION ref_textout(ref_tags, ref_ids)
 RETURNS text AS $$
 	SELECT ref_str( type_, class_, $2 )
 	FROM typed_object_classes WHERE tag_ = $1
-$$ LANGUAGE sql;
+$$ LANGUAGE sql STABLE;
 COMMENT ON
 FUNCTION ref_textout(ref_tags, ref_ids) IS
 'Convert a ref of given tag and id to to a text representation
@@ -272,7 +272,7 @@ $$ LANGUAGE sql;
 CREATE OR REPLACE
 FUNCTION ref_textout(refs) RETURNS text AS $$
 	SELECT ref_textout( ref_tag($1), ref_id($1) )
-$$ LANGUAGE sql;
+$$ LANGUAGE sql STABLE;
 COMMENT ON FUNCTION ref_textout(refs) IS
 'Convert a ref to a text output which is reasonably compact and
 human readable, and which can be read back into the same ref.';
