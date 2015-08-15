@@ -28,4 +28,4 @@ $M/spx.so: spx.o refs.o debug-log.o
 	rm -f $@
 	$(CC) $(CFLAGS) -shared -o $@  $M/spx.o $M/refs.o $M/debug-log.o
 #	$(CC) $(CFLAGS) -shared -o $@ $^
-include $(DepMakes)
+-include $(DepMakes)
