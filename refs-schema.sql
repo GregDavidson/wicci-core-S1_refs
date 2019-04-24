@@ -3,7 +3,7 @@
 SELECT set_file('refs-schema.sql', '$Id');
 
 -- Where should I do this?  Or what else should I do?
--- \i /usr/local/pgsql/share/contrib/pgxml.sql
+-- \i /usr/local/SW/pgsql/share/contrib/pgxml.sql
 
 --	Wicci Project
 --	Tagged Typed Object Reference Schema
