@@ -15,7 +15,7 @@ DEBUG_H=debug.h debug-log.h
 DEBUG=$(DEBUG_H)
 all: debug-test-run refs-sizes.sql spx.so $(DepMakes) $(SchemaOut)
 $M/debug-test: debug-test.o debug-log.o
-	cc -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^
 debug-test-run: $M/debug-test
 	rm -f debug-test.log
 	$M/debug-test
@@ -26,6 +26,9 @@ $M/debug-test.o: debug-test.c $(DEBUG)
 	$(CC)  $(CFLAGS) -c -o $@ $<
 $M/spx.so: spx.o refs.o debug-log.o
 	rm -f $@
-	$(CC) $(CFLAGS) -shared -o $@  $M/spx.o $M/refs.o $M/debug-log.o
+#	$(CC) $(CFLAGS) -shared -o $@  $M/spx.o $M/refs.o $M/debug-log.o
+#	$(CC) $(CFLAGS) -shared -o $@  $M/spx.o $M/refs.o $M/debug-log.o
+# For the Mac to produce a .so
+	cc -bundle -flat_namespace -undefined suppress -o $@ $M/spx.o $M/refs.o $M/debug-log.o
 #	$(CC) $(CFLAGS) -shared -o $@ $^
 -include $(DepMakes)
