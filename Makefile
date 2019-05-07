@@ -13,6 +13,16 @@ include Makefile-spx
 include Makefile-refs
 DEBUG_H=debug.h debug-log.h
 DEBUG=$(DEBUG_H)
+
+# the Mac needs a special command to create a .so
+ifeq ($(OS),$(OS_GNU))
+SO_CC := $(CC)
+SO_CFLAGS := $(CFLAGS) -shared
+else
+SO_CC := cc
+SO_CFLAGS := -bundle -flat_namespace -undefined suppress
+endif
+
 all: debug-test-run refs-sizes.sql spx.so $(DepMakes) $(SchemaOut)
 $M/debug-test: debug-test.o debug-log.o
 	$(CC) $(CFLAGS) -o $@ $^
@@ -26,9 +36,5 @@ $M/debug-test.o: debug-test.c $(DEBUG)
 	$(CC)  $(CFLAGS) -c -o $@ $<
 $M/spx.so: spx.o refs.o debug-log.o
 	rm -f $@
-#	$(CC) $(CFLAGS) -shared -o $@  $M/spx.o $M/refs.o $M/debug-log.o
-#	$(CC) $(CFLAGS) -shared -o $@  $M/spx.o $M/refs.o $M/debug-log.o
-# For the Mac to produce a .so
-	cc -bundle -flat_namespace -undefined suppress -o $@ $M/spx.o $M/refs.o $M/debug-log.o
-#	$(CC) $(CFLAGS) -shared -o $@ $^
+	$(SO_CC) $(SO_CFLAGS) -o $@  $M/spx.o $M/refs.o $M/debug-log.o
 -include $(DepMakes)

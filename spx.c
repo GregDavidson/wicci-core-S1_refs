@@ -933,7 +933,9 @@ static int cmp_procs_by_oid(const void *const p1, const void *const p2) {
 static inline void dst_size_accum_len(
 	char **dst, size_t *size, size_t *accum, size_t len
 ) {
-	if (*dst) *dst += len; if (*size > len) *size -= len; *accum += len;
+	if (*dst) *dst += len;
+	if (*size > len) *size -= len;
+	*accum += len;
 }
 
 /* When a cast is necessary and cannot be done using the
@@ -1611,7 +1613,7 @@ extern Datum RowColDatumType( CALLS_ const int row, const int col,
 	CallAssertMsg(
 	SPI_processed > row,
 	"row %d, col %d, SPI_processed %d",
-	row, col, SPI_processed
+	row, col, (int) SPI_processed
 	);
 	bool is_null, *const is_null_ptr = is_null_ret ?: &is_null;
 	SpxTypeOids result_type_local;
@@ -1793,7 +1795,7 @@ extern int SpxAccessDB(
 	status, SpxQueryDecode(status) );
 	else
 		CALL_DEBUG_OUT( "tuples: %d, status: %d %s",
-	SPI_processed, status,SpxQueryDecode(status) );
+										(int) SPI_processed, status,SpxQueryDecode(status) );
 	return SPI_processed;
 }
 
@@ -1804,7 +1806,7 @@ static void Update1(CALLS_ SpxPlans plan, Datum args[]) {
 	CALLS_LINK();
 	CallAssertMsg(
 	SpxUpdateDB(plan, args, 1) == 1,
-	"SPI_processed  %d", SPI_processed
+	"SPI_processed  %d", (int) SPI_processed
 	);
 }
 
@@ -1931,7 +1933,7 @@ static void Query1(CALLS_ SpxPlans plan, Datum args[]) {
 	CALL_LINK();
 	CallAssertMsg(
 		SpxQueryDB(plan, args, 1) == 1,
-		"SPI_processed  %d",  SPI_processed
+		"SPI_processed  %d",  (int) SPI_processed
 	 );
 }
 
