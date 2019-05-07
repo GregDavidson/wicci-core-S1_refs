@@ -15,12 +15,12 @@ DEBUG_H=debug.h debug-log.h
 DEBUG=$(DEBUG_H)
 
 # the Mac needs a special command to create a .so
-ifeq ($(OS),$(OS_GNU))
-SO_CC := $(CC)
-SO_CFLAGS := $(CFLAGS) -shared
-else
+ifeq ($(OS),$(OS_MAC))
 SO_CC := cc
 SO_CFLAGS := -bundle -flat_namespace -undefined suppress
+else
+SO_CC := $(CC)
+SO_CFLAGS := $(CFLAGS) -shared
 endif
 
 all: debug-test-run refs-sizes.sql spx.so $(DepMakes) $(SchemaOut)
