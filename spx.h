@@ -319,11 +319,16 @@ extern const SpxText Spx_Null_Text;
 #define SPX_RETURN_Text(textdata) do {			\
 	SpxText td = (textdata);					\
 	if (td.varchar) PG_RETURN_TEXT_P(td.varchar);	\
-	else PG_RETURN_NULL();					\
+	PG_RETURN_NULL();					\
 } while (0)
 
+#if 0
+// Oh well, it isn't used anymore anyway!
+// We have a hidden allocator call here!!!
+// and was CallAlloc
 #define SPX_RETURN_StrText(str)					\
-	SPX_RETURN_Text( SpxStrText( (str) , CallAlloc ) )
+	SPX_RETURN_Text( SpxStrText( CALL_ (str) , palloc ) )
+#endif
 
 // * Types
 
@@ -798,15 +803,36 @@ static const size_t MaxTextStrLen = 16 * 1024;  // !!! prototype debugging !!!
 	 that name_ref objects are "supposed" to be fairly small. */
 static const size_t MaxTorNameSize = 40; // !!! prototype debugging !!!
 
+/*
+	There are three contexts for memory allocation:
+	(1) Allocate for the Session - use malloc
+	(2) Allocate in the current memory context - use palloc
+	(3) If we're inside of an SPI_connect, allocate in the parent memory context
+       - use SPI_palloc
+
+	My current understanding is that functions being called from
+	SQL should use palloc for allocating objects which they're
+	returning by reference, and that the SQL call binding mechanism
+	will copy those objects before ending that memory context.
+  This seems to be all that we can do, as calling SPI_palloc when we
+	haven't done an SPI_connect gives the error that we're not connected.
+ */
+
 #define ALLOCATOR_FUNCTION(f) void *(f)(size_t size)
 #define ALLOCATOR_PTR(fp) ALLOCATOR_FUNCTION(*fp)
 
-/* allocate storage for duration of SPI call */
-ALLOCATOR_FUNCTION(TmpAlloc);
-ALLOCATOR_FUNCTION(CallAlloc);
+#if 0
+// ALLOCATOR_FUNCTION(TmpAlloc);
+// ALLOCATOR_FUNCTION(CallAlloc);
+/* allocate storage for duration of SPI call, i.e. in OUR SPI_context */
+ALLOCATOR_FUNCTION(MyAlloc);
+/* allocate storage in our Parent's SPI context */
+ALLOCATOR_FUNCTION(ParentAlloc);
+#endif
+/* allocate storage on the heap to last for this session */
 ALLOCATOR_FUNCTION(SessionAlloc);
 static inline void * CheckedAlloc(
-	size_t size, size_t max_size, ALLOCATOR_PTR(alloc)
+	CALLS_ size_t size, size_t max_size, ALLOCATOR_PTR(alloc)
 ) {
 	AssertThatMsg( size <= max_size,
 	C_SIZE_FMT(size) C_SIZE_FMT(max_size),
@@ -816,18 +842,25 @@ static inline void * CheckedAlloc(
 	return p;
 }
 
-static inline void * MemAlloc( size_t size, ALLOCATOR_PTR(alloc) ) {
-	return memset( CheckedAlloc(size, MaxAllocationSize, alloc ? alloc : CallAlloc), 0, size );
+// Having a default alloc is crufty!!!
+static inline void * MemAlloc( CALLS_ size_t size, ALLOCATOR_PTR(alloc) ) {
+	AssertBy_(_CALL_UP_, alloc);
+	//	return memset( CheckedAlloc(CALL_UP_ size, MaxAllocationSize, alloc ? alloc : palloc), 0, size );
+	return memset( CheckedAlloc(CALL_UP_ size, MaxAllocationSize, alloc), 0, size );
 }
 
-static inline char * StrAlloc( size_t size, ALLOCATOR_PTR(alloc) ) {
-	char * s = CheckedAlloc(size+1, MaxAllocationSize, alloc ? alloc : CallAlloc);
+// Having a default alloc is crufty!!!
+static inline char * StrAlloc( CALLS_ size_t size, ALLOCATOR_PTR(alloc) ) {
+	AssertBy_(_CALL_UP_, alloc);
+	//	char * s = CheckedAlloc(CALL_UP_ size+1, MaxAllocationSize, alloc ? alloc : palloc);
+	char * s = CheckedAlloc(CALL_UP_ size+1, MaxAllocationSize, alloc);
 	s[size] = '\0';
 	return s;
 }
 
-static inline StrPtr NewStr( Str old, ALLOCATOR_PTR(alloc) ) {
-	return strcpy( StrAlloc(strlen(old), alloc), old );
+static inline StrPtr NewStr( CALLS_ Str old, ALLOCATOR_PTR(alloc) ) {
+	AssertBy_(_CALL_UP_, alloc);
+	return strcpy( StrAlloc(CALL_UP_ strlen(old), alloc), old );
 }
 
 // * Utility Functions
@@ -926,9 +959,12 @@ int32 SpxUpdateInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids result_type, boo
 int64 SpxUpdateInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids result_type, bool *null_ret);
 int32 SpxUpdateIfInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids *, int32 or_else);
 int64 SpxUpdateIfInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids *, int64 or_else);
+#if 0
+// These are fine but unused
 bool SpxUpdateBool(CALLS_ SpxPlans, Datum args[], bool *null_ret);
 StrPtr SpxUpdateStr(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
 SpxText SpxUpdateText(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
+#endif
 
 // Execute a read-only query plan
 #define SpxQueryDB(plan,args,nrows)  SpxAccessDB(CALL_ (plan),(args),(nrows), 1) 
@@ -964,7 +1000,7 @@ int64 RowColInt64(CALLS_ int row, int col, SpxTypeOids result_type, bool *null_r
 int32 RowColIfTypeInt32(CALLS_ int row,int col,SpxTypeOids *type_ret, int32 or_else);
 int64 RowColIfTypeInt64(CALLS_ int row, int col, SpxTypeOids *type_ret, int64 or_else);
 bool RowColBool(CALLS_ int row, int col, bool *null_ret);
-StrPtr RowColStrPtr(CALLS_ int row, int col);  // fragile!!!
+StrPtr RowColStrPtr(CALLS_ int row, int col);  // fragile!!! why???
 StrPtr RowColStr(CALLS_ int row, int col, ALLOCATOR_PTR(alloc));
 SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc));
 
@@ -980,8 +1016,11 @@ int32 SpxQueryInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids result_type, bool
 int64 SpxQueryInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids result_type, bool *null_ret);
 int32 SpxQueryIfInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids *, int32 or_else);
 int64 SpxQueryIfInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids *, int64 or_else);
+#if 0
+// Not currently used
 bool SpxQueryBool(CALLS_ SpxPlans, Datum args[], bool *null_ret);
 StrPtr SpxQueryStr(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
+#endif
 SpxText SpxQueryText(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
 
 /* Unplanned Queries */
@@ -1000,10 +1039,10 @@ bool no_quotes(StrPtr s);      // free of single quotes
 // StrPtr NewStr( Str old, ALLOCATOR_PTR(f) ); // copy str into new storage
 
 /* concatenate strings into new storage */
-StrPtr StrCat(ALLOCATOR_PTR(alloc), StrPtr s0, ...) __attribute__ ((sentinel));
+StrPtr StrCat(CALLS_ ALLOCATOR_PTR(alloc), StrPtr s0, ...) __attribute__ ((sentinel));
 
 /* concatenate string slices into new storage */
-StrPtr StrCatSlices(ALLOCATOR_PTR(alloc), const StrPtr start, const StrPtr end, ...) __attribute__ ((sentinel));
+StrPtr StrCatSlices(CALLS_ ALLOCATOR_PTR(alloc), const StrPtr start, const StrPtr end, ...) __attribute__ ((sentinel));
 
 // Array Support
 
@@ -1118,8 +1157,8 @@ FUNCTION_DECLARE(spx_test_planned_queries); // item -> [item]
 
 /* type conversion */
 
-SpxText SpxStrText( StrPtr s, ALLOCATOR_PTR(allocator) );
-StrPtr SpxTextStr( SpxText td, ALLOCATOR_PTR(allocator) );
+SpxText SpxStrText( CALLS_ StrPtr s, ALLOCATOR_PTR(allocator) );
+StrPtr SpxTextStr( CALLS_ SpxText td, ALLOCATOR_PTR(allocator) );
 
 #ifndef SPX_C
 #include "last-tag.h"

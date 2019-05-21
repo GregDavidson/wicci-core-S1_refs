@@ -305,7 +305,7 @@ static inline Toms MethodForOpRefSpx(
 ) {
 	CALLS_LINK();
 	const Toms tom = MethodForOpTagSpx(
-	CALL_ op, RefTag(ref), op->arg_type_oids, num_args
+		CALL_ op, RefTag(ref), op->arg_type_oids, num_args
 	);
 	if ( !tom || DebugLevel() > 1 )
 		TomDebug(CALL_ op, ref, num_args, tom);
@@ -314,7 +314,6 @@ static inline Toms MethodForOpRefSpx(
 
 Datum CallMethod(CALLS_ Toms tom, Datum args[], bool *null_ret) {
 	CALL_LINK();
-	CallAssert(!SpxPlanNull(tom->plan) );
 	return (
 		tom->method->readonly
 		? SpxQueryDatumType
@@ -322,9 +321,10 @@ Datum CallMethod(CALLS_ Toms tom, Datum args[], bool *null_ret) {
 	) (	CALL_ tom->plan, args, 0, null_ret  );
 }
 
+// Should we let someone know if either or both pointers are NULL??
 static inline void NoValue(SpxText *text_ret, bool *null_ret) {
 	if ( text_ret )  *text_ret = SpxTextNull();
-	else *null_ret = true;
+	if (null_ret) *null_ret = true;
 }
 
 static void TomToValue(
@@ -333,11 +333,18 @@ static void TomToValue(
 	bool *null_ret, Datum *datum_ret		// or these
 ) {
 	CALLS_LINK();
-	if (!tom) NoValue( text_ret, null_ret );
-	else if ( text_ret )
-		*text_ret = SpxQueryText(CALL_ tom->plan, args, CallAlloc);
-	else
+	CallAssert(!!text_ret != !!datum_ret);
+	if (!tom)
+		NoValue( text_ret, null_ret );
+	else if ( text_ret )	{
+			*text_ret = SpxQueryText(CALL_ tom->plan, args, palloc); // was CallAlloc!!
+			if ( null_ret )
+				*null_ret = !text_ret->varchar;
+		}
+	else if ( datum_ret ) {
+		CallAssert(null_ret);
 		*datum_ret = CallMethod(CALL_ tom, args, null_ret);
+	}
 }
 
 // * op method dispatch without wicci magic
@@ -357,11 +364,13 @@ static void RefEtcToValue(
 	CallAssert(!SpxFuncReturnsSet(fcinfo));
 	const refs ref = GetArgRef(0);
 	const SpxProcs op = SpxProcByOid(CALL_ SpxFuncOid(fcinfo));
-	CallAssertMsg( op, "no method for " SPX_PROC_OID_FMT,
+	CallAssertMsg( op, "no operation proc for " SPX_PROC_OID_FMT,
 		 SPX_PROC_OID_VAL(SpxFuncOid(fcinfo)) );
 	CallAssert(num_args >= op->min_args );
 	CallAssert(num_args <= op->max_args );
 	const Toms tom = MethodForOpRefSpx(CALL_ op, ref, num_args);
+	CallAssertMsg( tom, "no method proc for " SPX_PROC_OID_FMT,
+		 SPX_PROC_OID_VAL(SpxFuncOid(fcinfo)) );
 	TomToValue(
 		 CALL_ tom, SpxFuncArgs(fcinfo), SpxFuncNargs(fcinfo),
 		 text_ret, null_ret, datum_ret
@@ -729,17 +738,28 @@ static StrPtr CRefsOut(CRefs crefs, bool isnull) {
 }
 
 FUNCTION_DEFINE(crefs_out) {		// crefs -> cstring
+	CALL_BASE();
 	AssertThat(SpxFuncNargs(fcinfo) == 1);
 	AssertThat(SpxFuncArgType(fcinfo, 0) == CRefs_Type.type_oid);
 	PG_RETURN_CSTRING(
-		NewStr( CRefsOut(GetArgCrefs(0), PG_ARGISNULL(0)), CallAlloc )
+										//		NewStr( CALL_ CRefsOut(GetArgCrefs(0), PG_ARGISNULL(0)), CallAlloc )
+		NewStr( CALL_ CRefsOut(GetArgCrefs(0), PG_ARGISNULL(0)), palloc )
 	);
 }
 
 FUNCTION_DEFINE(crefs_calls) {		// crefs -> text
+	CALL_BASE();
 	AssertThat(SpxFuncNargs(fcinfo) == 1);
 	AssertThat(SpxFuncArgType(fcinfo, 0) == CRefs_Type.type_oid);
-	SPX_RETURN_StrText( CRefsOut(GetArgCrefs(0), PG_ARGISNULL(0)) );
+	// hidden CALL_ symbol in expansion of this macro :-( !!!
+	//	SPX_RETURN_StrText( CRefsOut(GetArgCrefs(0), PG_ARGISNULL(0)) );
+	// SPX_RETURN_Text( SpxStrText( CALLS_ CRefsOut( GetArgCrefs(0), PG_ARGISNULL(0) ), palloc ) );
+	// Could I just create a string and return it???
+	//	SpxText td =  SpxStrText( CALL_ CRefsOut( GetArgCrefs(0), PG_ARGISNULL(0) ), palloc );
+	StrPtr s = CRefsOut( GetArgCrefs(0), PG_ARGISNULL(0) );
+	if (s)
+		PG_RETURN_CSTRING(s);
+	PG_RETURN_NULL();
 }
 
 /*
@@ -835,7 +855,7 @@ FUNCTION_DEFINE(refs_base_init) {
 	RefLoadTocs(_CALL_);
 	FinishSPX(CALL_ level);
 	Initialize();
-	PG_RETURN_CSTRING( NewStr(refs_module_id, CallAlloc) );
+	PG_RETURN_CSTRING( NewStr(CALL_ refs_module_id, palloc) ); // was TmpAlloc!!
 }
 
 // * Low level Utility Functions
@@ -1011,10 +1031,10 @@ FUNCTION_DEFINE(call_out_method) {	//  ref -> cstring
 	if ( !RefsInitialized() ) {
 		// output in a portable numeric format
 		if ( SpxFuncArgNull(fcinfo, ref_arg) )
-			PG_RETURN_CSTRING( NewStr("()", CallAlloc) );
+			PG_RETURN_CSTRING( NewStr(CALL_ "()", palloc) );
 		char buf[20];
 		sprintf(buf, "(" REF_TAG_FMT__ " " REF_ID_FMT__ ")", REF_VAL(ref));
-		PG_RETURN_CSTRING( NewStr(buf, CallAlloc) );
+		PG_RETURN_CSTRING( NewStr(CALL_ buf, palloc) );
 	}
 	SpxRequired(_CALL_);
 	SPX_FUNC_NUM_ARGS_IS(num_args);
@@ -1027,8 +1047,12 @@ FUNCTION_DEFINE(call_out_method) {	//  ref -> cstring
 		&Refs_Type.type_oid, 1, &toc->out_plan
 	);
 	const SpxText result = SpxQueryText(
-		CALL_ toc->out_plan, SpxFuncArgs(fcinfo), TmpAlloc
+		CALL_ toc->out_plan, SpxFuncArgs(fcinfo), SPI_palloc
 	);
+	/* Alternatively:
+   *  Use palloc just above
+   *  Not do the SpxTextStr with ParentAlloc here if result isn't Null
+ */
 	FinishSPX(CALL_ level);
 	if (SpxTextIsNull(result)) {
 		EREPORT_LEVEL_MSG(
@@ -1037,7 +1061,8 @@ FUNCTION_DEFINE(call_out_method) {	//  ref -> cstring
 		);
 		PG_RETURN_NULL();
 	}
-	PG_RETURN_CSTRING( SpxTextStr(result,  CallAlloc) );
+	// see comment above
+	PG_RETURN_CSTRING( SpxTextStr(CALL_ result,  palloc) );
 }
 
 // ** op method dispatch with wicci magic

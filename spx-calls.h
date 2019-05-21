@@ -28,6 +28,11 @@
 
 #ifdef _NO_CALL_CHAINS_
 
+/* We currently need call chains to be able to tell if we're
+in an SPI context, e.g. in CallAlloc and TmpAlloc.  Until we
+find a workaround for that we have to keep call chains!!
+*/
+
 /* _NO_CALL_CHAINS_ had better not be defined until we
  (1)	finish coming up with do-nothing variants of all
 	of the stuff below
@@ -48,10 +53,12 @@
 #else
 
 // for functions taking no other arguments:
-#define _CALLS_	Calls call_link_
+#define _CALL_UP_ call_link_
+#define _CALLS_	Calls _CALL_UP_
 #define _CALL_		call_chain_
 
 // for functions taking other arguments, pass calls first:
+#define CALL_UP_ _CALL_UP_,
 #define CALLS_		_CALLS_,
 #define CALL_		_CALL_,
 
@@ -138,8 +145,9 @@ TmpStrPtr JoinCalls(_CALLS_);  // join graph into a list
 #define JOIN_CALLS(calls) ( JoinCalls( &CALL(_CALL_) ) )
 #endif
 
-
 // ** call_chain assertion macros
+
+// Which of these could be Inline Functions??
 
 #define AssertBy_(calls, bool_exp) AssertExpFunc(bool_exp, JoinCalls(calls))
 #define AssertByMsg_( calls, bool_exp, ... )						\
@@ -150,6 +158,8 @@ TmpStrPtr JoinCalls(_CALLS_);  // join graph into a list
 	AssertByMsg_(_CALL_, bool_exp, ## __VA_ARGS__)
 
 // * initialization and SPI connection management
+
+// LOTS of these could just use _CALL_UP_ FTW!!
 
 static inline int StackedSPX(_CALLS_) { CALLS_LINK(); return _CALL_->state->connected; }
 static inline bool InSPX(_CALLS_) { CALLS_LINK(); return StackedSPX(_CALL_) > 0; }

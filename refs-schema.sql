@@ -130,7 +130,7 @@ COMMENT ON TABLE typed_object_methods IS '
 Associates operations with the methods which implement that
 operation for a particular type, indicated by its tag.  The first
 argument of the operation and of the method must be tors.  The
-signatures of both procedures must be compatible, e.g.:
+signatures of both procedures must be compatible, e.g.:<
 
 	(1) method argument types must be contravariant with
 	respect to the corresponding operation argument types

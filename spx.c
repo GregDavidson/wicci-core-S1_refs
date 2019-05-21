@@ -33,6 +33,8 @@ static const char spx_version[] = "$Id: spx.c,v 1.3 2007/07/24 04:27:47 greg Exp
 PG_MODULE_MAGIC;
 #endif
 
+ALLOCATOR_FUNCTION(SessionAlloc) { return malloc(size); }
+
 // * Reference Counting
 
 // objects that are not current but can't yet be freed go on TheWheel
@@ -619,7 +621,8 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 		CallAssertMsg( p->id >= 0 && p->id <= max_id,
 			"row %d bad schema id %d", row, p->id );
 		p->oid = RowColOid(CALL_ row, oid_, Oid_Type, 0);
-		const TmpStrPtr s = RowColStr(CALL_ row, name_, TmpAlloc);
+		// Tmp -> Session Yes???
+		const TmpStrPtr s = RowColStr(CALL_ row, name_, SessionAlloc);
 		strcpy(p->name, s);
 		const int name_size = RowColInt32(
 	CALL_ row, name_size_, Int32_Type, NULL
@@ -818,7 +821,8 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 		p->len = RowColInt32(CALL_ row, typlen_, Int32_Type, NULL);
 		p->by_value = RowColBool(CALL_ row, typbyval_, NULL);
 		const int name_size = RowColInt32(CALL_ row, name_size_, Int32_Type, NULL);
-		const TmpStrPtr s = RowColStr(CALL_ row, name_, TmpAlloc);
+		// Tmp -> Session Yes???
+		const TmpStrPtr s = RowColStr(CALL_ row, name_, SessionAlloc);
 		CallAssert(strlen(s) < name_size);
 		name_size_sum += name_size;
 		CallAssert(name_size_sum <= sum_text);
@@ -1026,8 +1030,7 @@ extern size_t SpxCallStr(
 FUNCTION_DEFINE(spx_proc_call_proc_str) {
 	enum {caller_arg, callee_arg, num_args};
 	CALL_BASE();
-	SpxCheckArgs(
-	CALL_ fcinfo, 0, Procedure_Type, Procedure_Type, End_Type );
+	SpxCheckArgs(	CALL_ fcinfo, 0, Procedure_Type, Procedure_Type, End_Type );
 	const SpxProcs caller = SpxProcByOid(CALL_ PG_GETARG_OID(caller_arg) );
 	CallAssert(caller);
 	const SpxProcs callee = SpxProcByOid(CALL_ PG_GETARG_OID(callee_arg) );
@@ -1035,15 +1038,17 @@ FUNCTION_DEFINE(spx_proc_call_proc_str) {
 	const int num_call_args = caller->max_args > callee->max_args
 		? callee->max_args : caller->max_args;
 	char buf[1+SpxCallStr(
-	CALL_ 0, 0, callee, SpxTypeOid(caller->return_type),
-	caller->arg_type_oids, num_call_args
+												CALL_ 0, 0, callee, SpxTypeOid(caller->return_type),
+												caller->arg_type_oids, num_call_args
 	)];
+	// Why adding 1 twice??
 	SpxCallStr(
-	CALL_ buf, 1+sizeof buf, callee,
-	SpxTypeOid(caller->return_type),
-	caller->arg_type_oids, num_call_args
+						 CALL_ buf, 1+sizeof buf, callee,
+						 SpxTypeOid(caller->return_type),
+						 caller->arg_type_oids, num_call_args
 	);
-	PG_RETURN_CSTRING( NewStr(buf, CallAlloc) );
+	//	PG_RETURN_CSTRING( NewStr(CALL_ buf, CallAlloc) );
+	PG_RETURN_CSTRING( NewStr(CALL_ buf, palloc) );
 }
 
 extern SpxPlans SpxProcTypesQueryPlan(
@@ -1173,7 +1178,8 @@ static SpxProcCache LoadProcs(_CALLS_) {
 		CallAssert( ( max_args_accum += p->max_args ) <= sum_nargs );
 		const int name_size = RowColInt32(CALL_ row, name_size_, Int32_Type, NULL);
 		CallAssert( ( name_size_accum += name_size ) <= sum_text );
-		strcpy( spx_proc_name(p), RowColStr(CALL_ row, name_, TmpAlloc) );
+		// Tmp -> Session Yes???
+		strcpy( spx_proc_name(p), RowColStr(CALL_ row, name_, SessionAlloc) );
 		const int num_arg_types = RowColOidVector(
 				 CALL_ row, argtypes_, p->arg_type_oids, p->max_args );
 		CallAssert(num_arg_types == p->max_args);
@@ -1286,14 +1292,16 @@ FUNCTION_DEFINE(spx_init) {
 	SPX_FUNC_NUM_ARGS_IS(0);
 	SpxInit(_CALL_);
 	Initialize();
-	PG_RETURN_CSTRING( NewStr(spx_version, CallAlloc) );
+	//	PG_RETURN_CSTRING( NewStr(CALL_ spx_version, CallAlloc) );
+	PG_RETURN_CSTRING( NewStr(CALL_ spx_version, palloc) );
 }
 
 FUNCTION_DEFINE(spx_collate_locale) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(0);
 	SpxInit(_CALL_);
-	PG_RETURN_CSTRING( NewStr(setlocale(LC_COLLATE, 0), CallAlloc) );
+	//	PG_RETURN_CSTRING( NewStr(CALL_ setlocale(LC_COLLATE, 0), CallAlloc) );
+	PG_RETURN_CSTRING( NewStr(CALL_ setlocale(LC_COLLATE, 0), palloc) );
 }
 
 /* Utility Function Definitions */
@@ -1434,7 +1442,8 @@ FUNCTION_DEFINE(spx_schema_by_id) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(1);
 	const SpxSchemas s = SpxSchemaById(CALL_ PG_GETARG_INT32(0) );
-	if (s) PG_RETURN_CSTRING( NewStr(s->name, CallAlloc) );
+	//	if (s) PG_RETURN_CSTRING( NewStr(CALL_ s->name, CallAlloc) );
+	if (s) PG_RETURN_CSTRING( NewStr(CALL_ s->name, palloc) );
 	PG_RETURN_NULL();
 }
 
@@ -1442,7 +1451,8 @@ FUNCTION_DEFINE(spx_schema_by_oid) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(1);
 	const SpxSchemas s = SpxSchemaByOid(CALL_ PG_GETARG_OID(0) );
-	if (s) PG_RETURN_CSTRING( NewStr(s->name, CallAlloc) );
+	//	if (s) PG_RETURN_CSTRING( NewStr(CALL_ s->name, CallAlloc) );
+	if (s) PG_RETURN_CSTRING( NewStr(CALL_ s->name, palloc) );
 	PG_RETURN_NULL();
 }
 
@@ -1491,7 +1501,8 @@ FUNCTION_DEFINE(spx_type_by_oid) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(1);
 	const SpxTypes t = SpxTypeByOid(CALL_  PG_GETARG_OID(0) );
-	if (t) PG_RETURN_CSTRING( NewStr(t->name, CallAlloc) );
+	//	if (t) PG_RETURN_CSTRING( NewStr(CALL_ t->name, CallAlloc) );
+	if (t) PG_RETURN_CSTRING( NewStr(CALL_ t->name, palloc) );
 	PG_RETURN_NULL();
 }
 
@@ -1536,7 +1547,8 @@ FUNCTION_DEFINE(spx_proc_by_oid) {
 	char buf[ 1 + SpxProcSig(CALL_ 0, 0, p) ];
 	CALL_DEBUG_OUT(C_SIZE_FMT(sizeof buf), C_SIZE_VAL(sizeof buf));
 	CallAssert( sizeof buf == 1 + SpxProcSig(CALL_ buf, sizeof buf, p) );
-	PG_RETURN_CSTRING( NewStr(buf, CallAlloc) );
+	//	PG_RETURN_CSTRING( NewStr(CALL_ buf, CallAlloc) );
+	PG_RETURN_CSTRING( NewStr(CALL_ buf, palloc) );
 }
 
 #endif
@@ -1760,22 +1772,26 @@ extern StrPtr RowColStrPtr(CALLS_ int row, int col) {
 	return s;
 }
 
+// We now assert that alloc is never null!!
 extern StrPtr RowColStr(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
 	CALLS_LINK();
-	const StrPtr s1 = RowColStrPtr(CALL_ row, col);
-	const StrPtr s2 = ( s1 != NULL && alloc != TmpAlloc)
-		? NewStr( s1, alloc ) : s1;
-	// if (s1 != s2) pfree(s1);	// cheaper not to, I think
-	return s2;
+	CallAssert(alloc);
+	const StrPtr s = RowColStrPtr(CALL_ row, col);
+	#if 0
+	const StrPtr s2 = ( s && alloc != TmpAlloc)
+		? NewStr( CALL_UP_ s, alloc ) : s;
+	#endif
+	if (s == NULL)
+		return s;
+	return NewStr( CALL_UP_ s, alloc );
 }
 
 extern SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
 	CALLS_LINK();
-	const StrPtr s = RowColStr(CALL_  row, col, TmpAlloc);
+	const StrPtr s = RowColStrPtr(CALL_  row, col);
 	if (s == NULL)
 		return Spx_Null_Text;
-	const SpxText vc = SpxStrText( s, alloc );
-//  pfree(s);	// cheaper not  to, I think
+	const SpxText vc = SpxStrText( CALL_ s, alloc );
 	return vc;
 }
 
@@ -1899,6 +1915,10 @@ extern int64 SpxUpdateIfInt64( CALLS_ SpxPlans plan, Datum args[],
 	return is_null ? or_else : i;
 }
 
+#if 0
+// We seem to use very little of the SpxUpdate* machinery!
+// How much of it should we get rid of??
+
 // execute a query plan returning a boolean result
 extern bool SpxUpdateBool(
 	CALLS_ SpxPlans plan, Datum args[], bool *is_null_ret
@@ -1925,6 +1945,7 @@ extern SpxText SpxUpdateText(
 	Update1(CALL_ plan, args);
 	return RowColText(CALL_ 0, 0, alloc);
 }
+#endif
 
 /* read-only query convenience functions */
 
@@ -2034,6 +2055,11 @@ extern int64 SpxQueryIfInt64( CALLS_ SpxPlans plan, Datum args[],
 	return is_null ? or_else : i;
 }
 
+#if 0
+// Not currently used
+// At some point let's use a tool to find all of the unused things
+// and determine their proper status!!
+
 // execute a query plan returning a boolean result
 bool 
 SpxQueryBool(CALLS_ SpxPlans plan, Datum args[], bool *is_null_ret) {
@@ -2050,6 +2076,8 @@ SpxQueryStr(CALLS_ SpxPlans plan, Datum args[], ALLOCATOR_PTR(alloc)) {
 	return RowColStr(CALL_ 0, 0, alloc);
 }
 
+#endif
+
 /* Call Graph Functions */
 
 // join call graph into call context string 
@@ -2059,7 +2087,7 @@ static TmpStrPtr JoinCallAccum(CALLS_ size_t accum) {
 	static const char separator[] = ".";
 	static const size_t sep_len = sizeof separator - 1;
 	if ( !_CALL_ ) {
-		result = (char *) TmpAlloc(accum + 1);
+		result = (char *) palloc(accum + 1); // Was TmpAlloc!!
 		*result = '\0';
 	} else {
 		const size_t fname_len = strlen(_CALL_->fname);
@@ -2085,77 +2113,49 @@ TmpStrPtr JoinCalls(_CALLS_) {
 	 connected to an SPI session?
 */
 
-ALLOCATOR_FUNCTION(CallAlloc) { return SPI_palloc(size); }
+#if 0
+/* allocate storage in our Parent's SPI context */
+ALLOCATOR_FUNCTION(CallAlloc) {
+	return InSPX(_CALL_UP_) ? SPI_palloc(size) : palloc(size);
+}
+/* allocate storage for duration of SPI call, i.e. in OUR SPI_context */
+ALLOCATOR_FUNCTION(TmpAlloc) {
+	return palloc(size);
+}
+#endif
 
-// ALLOCATOR_FUNCTION(TmpAlloc) { return palloc(size); }
-ALLOCATOR_FUNCTION(TmpAlloc) { return SPI_palloc(size); }
-
-ALLOCATOR_FUNCTION(SessionAlloc) { return malloc(size); }
-
-/* String <--> Conversion and Allocattion Functions */
+/* String <--> Conversion and Allocation Functions */
 
 // See src/backend/utils/adt/varchar.c:  varcharin and varchar_input
-
-#ifdef PGSQL_LT_83
- 
-extern SpxText SpxStrText( StrPtr str, ALLOCATOR_PTR(alloc) ) {
-	if (str == NULL)
-		return Spx_Null_Text;
-	const size_t str_len = strlen(str);
-	const size_t td_len = str_len + VARHDRSZ;
-	SpxText td;
-	td.varchar = MemAlloc(td_len, alloc);
-	VARATT_SIZEP(td.varchar) = td_len;
-	memcpy( VARDATA(td.varchar), str, str_len );
-	return td;
-}
-
-#else
 
 // one way to do it:
 // #define CStringGetTextP(c)
 //	DatumGetTextP(DirectFunctionCall1(textin, CStringGetDatum(c)))
 
-
-extern SpxText SpxStrText( StrPtr str, ALLOCATOR_PTR(alloc) ) {
+extern SpxText SpxStrText( CALLS_ StrPtr str, ALLOCATOR_PTR(alloc) ) {
 	if (str == NULL)
 		return Spx_Null_Text;
 	const size_t str_len = strlen(str);
 	const size_t td_len = str_len + VARHDRSZ;
 	SpxText td;
-	td.varchar = MemAlloc(td_len, alloc);
+	td.varchar = MemAlloc(CALL_UP_ td_len, alloc);
 	SET_VARSIZE(td.varchar, td_len);
 	memcpy( VARDATA(td.varchar), str, str_len );
 	return td;
 }
 
-#endif
- 
-#ifdef PGSQL_LT_83
-
-extern StrPtr SpxTextStr( SpxText td, ALLOCATOR_PTR(alloc) ) {
-	const size_t vc_len = VARATT_SIZEP(td.varchar);
-	AssertThat( vc_len >= VARHDRSZ );
-	const size_t str_len = vc_len - VARHDRSZ;
-	return memcpy( StrAlloc(str_len, alloc), VARDATA(td.varchar), str_len);
-}
-
-#else
-
 // One way to do it:
 // #define TextPGetCString(t) 
 //	DatumGetCString(DirectFunctionCall1(textout, PointerGetDatum(t)))
 
-extern StrPtr SpxTextStr( SpxText td, ALLOCATOR_PTR(alloc) ) {
+extern StrPtr SpxTextStr( CALLS_ SpxText td, ALLOCATOR_PTR(alloc) ) {
 	const size_t len = VARSIZE_ANY_EXHDR(td.varchar);
-	return memcpy( StrAlloc(len, alloc), VARDATA_ANY(td.varchar), len);
+	return memcpy( StrAlloc(CALL_UP_ len, alloc), VARDATA_ANY(td.varchar), len);
 }
-
-#endif
 
 /* String Concatenation and Allocation Functions */
 
-StrPtr StrCat(ALLOCATOR_PTR(alloc), const StrPtr s0, ...) {
+StrPtr StrCat(CALLS_ ALLOCATOR_PTR(alloc), const StrPtr s0, ...) {
 	va_list args;
 	StrPtr s;
 	char *buf;
@@ -2166,7 +2166,7 @@ StrPtr StrCat(ALLOCATOR_PTR(alloc), const StrPtr s0, ...) {
 		len += strlen(s);
 	va_end(args);
 
-	buf = StrAlloc(len, alloc);
+	buf = StrAlloc(CALL_UP_ len, alloc);
 	buf[0] = '\0';
 
 	va_start(args, s0);
@@ -2177,7 +2177,7 @@ StrPtr StrCat(ALLOCATOR_PTR(alloc), const StrPtr s0, ...) {
 	return buf;
 }
 
-StrPtr StrCatSlices(ALLOCATOR_PTR(alloc), const StrPtr start0, const StrPtr end0, ...) {
+StrPtr StrCatSlices(CALLS_ ALLOCATOR_PTR(alloc), const StrPtr start0, const StrPtr end0, ...) {
 	va_list args;
 	StrPtr start, end;
 	size_t len = 0;
@@ -2190,7 +2190,7 @@ StrPtr StrCatSlices(ALLOCATOR_PTR(alloc), const StrPtr start0, const StrPtr end0
 		len += end ? (end - start) : strlen(start) ;
 	va_end(args);
 
-	char *const buf = StrAlloc(len, alloc);
+	char *const buf = StrAlloc(CALL_UP_ len, alloc);
 	buf[0] = '\0';
 
 	va_start(args, end0);
@@ -2342,7 +2342,7 @@ static inline SpxArrayInfo ZeroArrayInfo(
 	CALL_LINK();
 	CallAssert(a == 0 || alloc == 0);
 	static const struct array_info zip;
-	if (a == 0) a = alloc( sizeof *a );
+	if (a == 0) a = alloc(sizeof *a );
 	*a = zip;
 	a->dims = a->dims_array;
 	a->base = a->base_array;
