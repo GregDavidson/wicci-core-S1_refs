@@ -860,6 +860,7 @@ static inline char * StrAlloc( CALLS_ size_t size, ALLOCATOR_PTR(alloc) ) {
 
 static inline StrPtr NewStr( CALLS_ Str old, ALLOCATOR_PTR(alloc) ) {
 	AssertBy_(_CALL_UP_, alloc);
+	if (!old) return old;
 	return strcpy( StrAlloc(CALL_UP_ strlen(old), alloc), old );
 }
 

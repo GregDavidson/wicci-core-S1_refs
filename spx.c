@@ -1772,25 +1772,17 @@ extern StrPtr RowColStrPtr(CALLS_ int row, int col) {
 	return s;
 }
 
-// We now assert that alloc is never null!!
 extern StrPtr RowColStr(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
 	CALLS_LINK();
 	CallAssert(alloc);
 	const StrPtr s = RowColStrPtr(CALL_ row, col);
-	#if 0
-	const StrPtr s2 = ( s && alloc != TmpAlloc)
-		? NewStr( CALL_UP_ s, alloc ) : s;
-	#endif
-	if (s == NULL)
-		return s;
-	return NewStr( CALL_UP_ s, alloc );
+	return NewStr( CALL_ s, alloc );
 }
 
 extern SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
 	CALLS_LINK();
 	const StrPtr s = RowColStrPtr(CALL_  row, col);
-	if (s == NULL)
-		return Spx_Null_Text;
+	WARN_OUT("%s: row %d, col %d, value %s", __func__, row, col, s ?: "NULL");
 	const SpxText vc = SpxStrText( CALL_ s, alloc );
 	return vc;
 }
@@ -2116,7 +2108,8 @@ TmpStrPtr JoinCalls(_CALLS_) {
 #if 0
 /* allocate storage in our Parent's SPI context */
 ALLOCATOR_FUNCTION(CallAlloc) {
-	return InSPX(_CALL_UP_) ? SPI_palloc(size) : palloc(size);
+	CALLS_LINK();
+	return InSPX(_CALL_) ? SPI_palloc(size) : palloc(size);
 }
 /* allocate storage for duration of SPI call, i.e. in OUR SPI_context */
 ALLOCATOR_FUNCTION(TmpAlloc) {
@@ -2133,13 +2126,18 @@ ALLOCATOR_FUNCTION(TmpAlloc) {
 //	DatumGetTextP(DirectFunctionCall1(textin, CStringGetDatum(c)))
 
 extern SpxText SpxStrText( CALLS_ StrPtr str, ALLOCATOR_PTR(alloc) ) {
+	CALLS_LINK();
 	if (str == NULL)
 		return Spx_Null_Text;
 	const size_t str_len = strlen(str);
-	const size_t td_len = str_len + VARHDRSZ;
+	// const size_t td_len = str_len + VARHDRSZ;
+	const size_t td_len = VARHDRSZ + str_len + 1;
+	// const size_t td_len_bytes = (VARHDRSZ + str_len + 1);
+	// const size_t td_len = td_len_bytes + (td_len_bytes + 4) % 4;
 	SpxText td;
-	td.varchar = MemAlloc(CALL_UP_ td_len, alloc);
+	td.varchar = MemAlloc(CALL_ td_len, alloc);
 	SET_VARSIZE(td.varchar, td_len);
+	CallAssert(td_len < MaxAllocationSize);
 	memcpy( VARDATA(td.varchar), str, str_len );
 	return td;
 }
@@ -2149,8 +2147,9 @@ extern SpxText SpxStrText( CALLS_ StrPtr str, ALLOCATOR_PTR(alloc) ) {
 //	DatumGetCString(DirectFunctionCall1(textout, PointerGetDatum(t)))
 
 extern StrPtr SpxTextStr( CALLS_ SpxText td, ALLOCATOR_PTR(alloc) ) {
+	CALLS_LINK();
 	const size_t len = VARSIZE_ANY_EXHDR(td.varchar);
-	return memcpy( StrAlloc(CALL_UP_ len, alloc), VARDATA_ANY(td.varchar), len);
+	return memcpy( StrAlloc(CALL_ len, alloc), VARDATA_ANY(td.varchar), len);
 }
 
 /* String Concatenation and Allocation Functions */
@@ -2160,13 +2159,14 @@ StrPtr StrCat(CALLS_ ALLOCATOR_PTR(alloc), const StrPtr s0, ...) {
 	StrPtr s;
 	char *buf;
 	size_t len = 0;
+	CALLS_LINK();
 
 	va_start(args, s0);
 	for (s = s0; s; s = va_arg(args, StrPtr))
 		len += strlen(s);
 	va_end(args);
 
-	buf = StrAlloc(CALL_UP_ len, alloc);
+	buf = StrAlloc(CALL_ len, alloc);
 	buf[0] = '\0';
 
 	va_start(args, s0);
@@ -2181,6 +2181,7 @@ StrPtr StrCatSlices(CALLS_ ALLOCATOR_PTR(alloc), const StrPtr start0, const StrP
 	va_list args;
 	StrPtr start, end;
 	size_t len = 0;
+	CALLS_LINK();
 
 	va_start(args, end0);
 	for ( start = start0, end = end0
@@ -2190,7 +2191,7 @@ StrPtr StrCatSlices(CALLS_ ALLOCATOR_PTR(alloc), const StrPtr start0, const StrP
 		len += end ? (end - start) : strlen(start) ;
 	va_end(args);
 
-	char *const buf = StrAlloc(CALL_UP_ len, alloc);
+	char *const buf = StrAlloc(CALL_ len, alloc);
 	buf[0] = '\0';
 
 	va_start(args, end0);
