@@ -515,13 +515,14 @@ static inline char *spx_proc_name(SpxProcs proc) {
 #define SPX_PROC_FMT_ FMT_LF_(proc, "%s.%s-" SPX_OID_FMT__)
 #define SPX_PROC_FMT FMT_LF(proc, "%s.%s-" SPX_OID_FMT__)
 #define SPX_PROC_VAL(proc)							\
-	(proc)->schema ? StrOrQ((proc)->schema->name) : "?",	\
-	StrOrQ(spx_proc_name((proc))), (proc)->oid
+	(!(proc) ? "???" : !(proc)->schema ? "??" : StrOrQ((proc)->schema->name) , \
+	 StrOrQ(spx_proc_name((proc)))), (!(proc) ? "?" : (proc)->oid)
 
 #else
 
 #define SPX_PROC_FMT_ FMT_LF_(proc, SPX_OID_FMT__ "." SPX_OID_FMT__ )
 #define SPX_PROC_FMT FMT_LF(proc, SPX_OID_FMT__ "." SPX_OID_FMT__ )
+// protect this one better against NULLs as in the one above!!
 #define SPX_PROC_VAL(proc)							\
 	(proc)->schema ? (proc)->schema->oid : -1,  (proc)->oid
 
@@ -872,6 +873,12 @@ char * StrAlloc( CALLS_ size_t size, ALLOCATOR_PTR(alloc) );
 // all other strings (including empty strings) will be reallocated
 // (empty strings get a new 1-byte buffer for a '\0' byte
 StrPtr NewStr( CALLS_ Str old, ALLOCATOR_PTR(alloc) );
+
+text *
+CStringToText( CALLS_ UtilStr s, ALLOCATOR_PTR(alloc) );
+
+UtilStr
+TextToCString( CALLS_ const text *const t, ALLOCATOR_PTR(alloc) );
 
 // * Utility Functions
 
