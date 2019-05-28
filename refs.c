@@ -126,7 +126,7 @@ FUNCTION_DEFINE(refs_debug_toms) {
 	SPX_FUNC_NUM_ARGS_IS(0);
 	if ( !Tom_Cache ) {
 		CALL_DEBUG_OUT("Tom_Cache NULL");
-		PG_RETURN_INT32( -1 );
+		PG_RETURN_NULL();
 	}
 	const Toms start = Tom_Cache->tom;
 	const Toms end = start + Tom_Cache->size;
@@ -332,14 +332,26 @@ static void TomToValue(
 	SpxText *text_ret,					// to either return this
 	bool *null_ret, Datum *datum_ret		// or these
 ) {
-	CALLS_LINK();
+	CALL_LINK();
+	AssertSPX(_CALL_);
 	CallAssert(!!text_ret != !!datum_ret);
 	if (!tom)
 		NoValue( text_ret, null_ret );
 	else if ( text_ret )	{
-			*text_ret = SpxQueryText(CALL_ tom->plan, args, palloc); // was CallAlloc!!
+			*text_ret = SpxQueryText(CALL_ tom->plan, args, call_SPI_palloc);
 			if ( null_ret )
 				*null_ret = !text_ret->varchar;
+			{ // paranoid testing: !!
+				if (text_ret->varchar)
+					{
+						char *const s = text_to_cstring(text_ret ->varchar);
+						WARN_OUT("%s: value %s", __func__, s ?: "NULL");
+						pfree(s);
+					}
+				else {
+					WARN_OUT("%s: value %s", __func__, "NULL");
+				}
+			}
 		}
 	else if ( datum_ret ) {
 		CallAssert(null_ret);
@@ -384,8 +396,18 @@ static void RefEtcToValue(
 */
 FUNCTION_DEFINE(call_text_method) {
 	SpxText value;
-	RefEtcToValue(fcinfo, &value, 0, 0);			//  RefsRequired
-	SPX_RETURN_Text(value);
+	bool is_null;
+	CALL_BASE();
+	RefEtcToValue(fcinfo, &value, &is_null, 0);			//  RefsRequired
+	if (is_null)
+		PG_RETURN_NULL();
+	CallAssert(value.varchar);
+	{															// if debug_level() ??
+		char *const s = text_to_cstring(value.varchar);
+		WARN_OUT("%s: value %s", __func__, s ?: "NULL");
+		pfree(s);
+	}
+	PG_RETURN_TEXT_P(value.varchar);
 }
 
 /* Handles most scalar-returning operations, with exceptions:
@@ -397,7 +419,7 @@ FUNCTION_DEFINE(call_scalar_method) {
 	RefEtcToValue(fcinfo, 0, &is_null, &value);	// RefsRequired
 	if ( is_null )
 		PG_RETURN_NULL();
-	return value;
+	PG_RETURN_DATUM(value);
 }
 
 // * Class Management
@@ -741,33 +763,30 @@ FUNCTION_DEFINE(crefs_out) {		// crefs -> cstring
 	CALL_BASE();
 	AssertThat(SpxFuncNargs(fcinfo) == 1);
 	AssertThat(SpxFuncArgType(fcinfo, 0) == CRefs_Type.type_oid);
-	PG_RETURN_CSTRING(
-										//		NewStr( CALL_ CRefsOut(GetArgCrefs(0), PG_ARGISNULL(0)), CallAlloc )
-		NewStr( CALL_ CRefsOut(GetArgCrefs(0), PG_ARGISNULL(0)), palloc )
-	);
+	UtilStr s = NewStr( CALL_ CRefsOut(GetArgCrefs(0), PG_ARGISNULL(0)), call_palloc );
+	if (s)
+		PG_RETURN_CSTRING(
+				NewStr( CALL_ CRefsOut(GetArgCrefs(0), PG_ARGISNULL(0)), call_palloc )
+		);
+	PG_RETURN_NULL();
 }
 
 FUNCTION_DEFINE(crefs_calls) {		// crefs -> text
 	CALL_BASE();
 	AssertThat(SpxFuncNargs(fcinfo) == 1);
 	AssertThat(SpxFuncArgType(fcinfo, 0) == CRefs_Type.type_oid);
-	// hidden CALL_ symbol in expansion of this macro :-( !!!
-	//	SPX_RETURN_StrText( CRefsOut(GetArgCrefs(0), PG_ARGISNULL(0)) );
-	// SPX_RETURN_Text( SpxStrText( CALLS_ CRefsOut( GetArgCrefs(0), PG_ARGISNULL(0) ), palloc ) );
-	// Could I just create a string and return it???
-	//	SpxText td =  SpxStrText( CALL_ CRefsOut( GetArgCrefs(0), PG_ARGISNULL(0) ), palloc );
 	StrPtr s = CRefsOut( GetArgCrefs(0), PG_ARGISNULL(0) );
 	if (s)
 		PG_RETURN_CSTRING(s);
 	PG_RETURN_NULL();
 }
 
-/*
+#if 0
 FUNCTION_DEFINE(crefs_env) {		// crefs -> ctext[]
 	AssertThat(SpxFuncNargs(fcinfo) == 1);
 	AssertThat(SpxFuncArgType(fcinfo, 0) == CRefs_Type.type_oid);
 }
-*/
+#endif
 
 FUNCTION_DEFINE(crefs_node) {		// crefs -> ref (doc_node_refs)
 	AssertThat(SpxFuncNargs(fcinfo) == 1);
@@ -855,7 +874,8 @@ FUNCTION_DEFINE(refs_base_init) {
 	RefLoadTocs(_CALL_);
 	FinishSPX(CALL_ level);
 	Initialize();
-	PG_RETURN_CSTRING( NewStr(CALL_ refs_module_id, palloc) ); // was TmpAlloc!!
+	// CallAssert(refs_module_id); // always true
+	PG_RETURN_CSTRING( NewStr(CALL_ refs_module_id, call_palloc) );
 }
 
 // * Low level Utility Functions
@@ -1031,10 +1051,10 @@ FUNCTION_DEFINE(call_out_method) {	//  ref -> cstring
 	if ( !RefsInitialized() ) {
 		// output in a portable numeric format
 		if ( SpxFuncArgNull(fcinfo, ref_arg) )
-			PG_RETURN_CSTRING( NewStr(CALL_ "()", palloc) );
+			PG_RETURN_CSTRING( NewStr(CALL_ "()", call_palloc) );
 		char buf[20];
 		sprintf(buf, "(" REF_TAG_FMT__ " " REF_ID_FMT__ ")", REF_VAL(ref));
-		PG_RETURN_CSTRING( NewStr(CALL_ buf, palloc) );
+		PG_RETURN_CSTRING( NewStr(CALL_ buf, call_palloc) );
 	}
 	SpxRequired(_CALL_);
 	SPX_FUNC_NUM_ARGS_IS(num_args);
@@ -1046,23 +1066,17 @@ FUNCTION_DEFINE(call_out_method) {	//  ref -> cstring
 		CALL_ toc->out, CString_Type,
 		&Refs_Type.type_oid, 1, &toc->out_plan
 	);
-	const SpxText result = SpxQueryText(
-		CALL_ toc->out_plan, SpxFuncArgs(fcinfo), SPI_palloc
+	UtilStr s = SpxQueryStr(
+		CALL_ toc->out_plan, SpxFuncArgs(fcinfo), call_SPI_palloc
 	);
-	/* Alternatively:
-   *  Use palloc just above
-   *  Not do the SpxTextStr with ParentAlloc here if result isn't Null
- */
 	FinishSPX(CALL_ level);
-	if (SpxTextIsNull(result)) {
-		EREPORT_LEVEL_MSG(
-			NOTICE, "%s: " REF_FMT " --> NULL",
-			__func__, REF_VAL(ref)
-		);
-		PG_RETURN_NULL();
-	}
-	// see comment above
-	PG_RETURN_CSTRING( SpxTextStr(CALL_ result,  palloc) );
+	if (s)
+		PG_RETURN_CSTRING(s);
+	EREPORT_LEVEL_MSG(
+		NOTICE, "%s: " REF_FMT " --> NULL",
+		__func__, REF_VAL(ref)
+	);
+	PG_RETURN_NULL();
 }
 
 // ** op method dispatch with wicci magic
@@ -1124,7 +1138,8 @@ static void RefEnvCrefsEtcToValue(
 FUNCTION_DEFINE(ref_env_crefs_etc_text_op) {
 	SpxText value;
 	RefEnvCrefsEtcToValue(fcinfo, &value, 0, 0); //  RefsRequired
-	SPX_RETURN_Text(value);
+	// SPX_RETURN_Text(value);
+	PG_RETURN_TEXT_P(value.varchar);
 }
 
 FUNCTION_DEFINE(ref_env_crefs_etc_scalar_op) {
@@ -1277,7 +1292,8 @@ static void OftdRefEnvCrefsEtcToValue(
 FUNCTION_DEFINE(oftd_ref_env_crefs_etc_text_op) {
 	SpxText value;
 	OftdRefEnvCrefsEtcToValue(fcinfo, &value, 0, 0); //  RefsRequired
-	SPX_RETURN_Text(value);
+	// SPX_RETURN_Text(value);
+	PG_RETURN_TEXT_P(value.varchar);
 }
 
 // oftd !!!

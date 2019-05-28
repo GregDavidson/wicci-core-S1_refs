@@ -25,9 +25,14 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
-#include <postgres.h>		// general Postgres declarations
-#include <executor/spi.h>	// GetAttributeByName(), SPI_freeplan
+// general Postgres declarations:
+#include <postgres.h>
+	// GetAttributeByName(), SPI_freeplan, etc.:
+#include <executor/spi.h>
 #include <utils/array.h>
+// Need cstring <-> text utilities
+// also inclues fmgr.h and other goodies:
+#include <utils/builtins.h>
 
 #include "str.h"	   // typedefs clarify '\0' terminated strings
 #include "array.h"	   // macros for C arrays
@@ -292,6 +297,7 @@ enum spx_allocs {
 	spx_session		// will persist for the rest of this session
 };
 
+// from include/c.h: typedef struct varlena text;
 typedef struct {
 	struct varlena *varchar;
 #if 0
@@ -303,6 +309,16 @@ static inline SpxText SpxTextNull(void) {
 	return (SpxText) {0};
 }
 
+static inline bool SpxTextIsNull(SpxText t) { return !t.varchar; }
+
+#if 0
+
+/* Macros and functions defined and declared in
+ * include/utils/builtins.h
+ * seem to make all of this obsolete!
+ * PostgreSQL still needs to document a wider SPI API!
+ */
+
 static inline SpxText SpxArgText(PG_FUNCTION_ARGS /*fcinfo*/, int arg_no) {
 	return (SpxText){PG_GETARG_TEXT_P(arg_no)};
 }
@@ -311,8 +327,6 @@ static inline SpxText SpxArgText(PG_FUNCTION_ARGS /*fcinfo*/, int arg_no) {
 static inline SpxText SpxDatumText(Datum d) {
 	return (SpxText){DatumGetTextP(d)};
 }
-
-static inline bool SpxTextIsNull(SpxText t) { return !t.varchar; }
 
 extern const SpxText Spx_Null_Text;
 
@@ -328,6 +342,15 @@ extern const SpxText Spx_Null_Text;
 // and was CallAlloc
 #define SPX_RETURN_StrText(str)					\
 	SPX_RETURN_Text( SpxStrText( CALL_ (str) , palloc ) )
+#endif
+
+/* type conversion */
+
+#if 0
+SpxText SpxStrText( CALLS_ StrPtr s, ALLOCATOR_PTR(allocator) );
+StrPtr SpxTextStr( CALLS_ SpxText td, ALLOCATOR_PTR(allocator) );
+#endif
+
 #endif
 
 // * Types
@@ -818,51 +841,37 @@ static const size_t MaxTorNameSize = 40; // !!! prototype debugging !!!
 	haven't done an SPI_connect gives the error that we're not connected.
  */
 
-#define ALLOCATOR_FUNCTION(f) void *(f)(size_t size)
+// #define ALLOCATOR_FUNCTION(f) void *(f)(size_t size)
+#define ALLOCATOR_FUNCTION(f) void *(f)(CALLS_ size_t size)
 #define ALLOCATOR_PTR(fp) ALLOCATOR_FUNCTION(*fp)
+// #define CALL_ALLOC(alloc, size) alloc(size)
+#define CALL_ALLOC(alloc, size) alloc(_CALL_, size)
 
-#if 0
-// ALLOCATOR_FUNCTION(TmpAlloc);
-// ALLOCATOR_FUNCTION(CallAlloc);
-/* allocate storage for duration of SPI call, i.e. in OUR SPI_context */
-ALLOCATOR_FUNCTION(MyAlloc);
-/* allocate storage in our Parent's SPI context */
-ALLOCATOR_FUNCTION(ParentAlloc);
-#endif
-/* allocate storage on the heap to last for this session */
+// * Allocation Function Declarations
+
+/* These used to be defined here as static inline functions
+ * but then they got instrumented and needed access to
+ * debug_level() which is not available outside of
+ * compilation units!!
+ */
+
+/* allocate storage in current SPI_context */
+ALLOCATOR_FUNCTION(call_palloc);
+/* allocate storage in SPI_context above us */
+ALLOCATOR_FUNCTION(call_SPI_palloc);
+/* allocate storage on the heap */
 ALLOCATOR_FUNCTION(SessionAlloc);
-static inline void * CheckedAlloc(
+
+void * CheckedAlloc(
 	CALLS_ size_t size, size_t max_size, ALLOCATOR_PTR(alloc)
-) {
-	AssertThatMsg( size <= max_size,
-	C_SIZE_FMT(size) C_SIZE_FMT(max_size),
-	C_SIZE_VAL(size), C_SIZE_VAL(max_size) );
-	void * p = alloc(size);
-	AssertThat(p != NULL);
-	return p;
-}
+);
+void * MemAlloc( CALLS_ size_t size, ALLOCATOR_PTR(alloc) );
+char * StrAlloc( CALLS_ size_t size, ALLOCATOR_PTR(alloc) );
 
-// Having a default alloc is crufty!!!
-static inline void * MemAlloc( CALLS_ size_t size, ALLOCATOR_PTR(alloc) ) {
-	AssertBy_(_CALL_UP_, alloc);
-	//	return memset( CheckedAlloc(CALL_UP_ size, MaxAllocationSize, alloc ? alloc : palloc), 0, size );
-	return memset( CheckedAlloc(CALL_UP_ size, MaxAllocationSize, alloc), 0, size );
-}
-
-// Having a default alloc is crufty!!!
-static inline char * StrAlloc( CALLS_ size_t size, ALLOCATOR_PTR(alloc) ) {
-	AssertBy_(_CALL_UP_, alloc);
-	//	char * s = CheckedAlloc(CALL_UP_ size+1, MaxAllocationSize, alloc ? alloc : palloc);
-	char * s = CheckedAlloc(CALL_UP_ size+1, MaxAllocationSize, alloc);
-	s[size] = '\0';
-	return s;
-}
-
-static inline StrPtr NewStr( CALLS_ Str old, ALLOCATOR_PTR(alloc) ) {
-	AssertBy_(_CALL_UP_, alloc);
-	if (!old) return old;
-	return strcpy( StrAlloc(CALL_UP_ strlen(old), alloc), old );
-}
+// NULL => NULL
+// all other strings (including empty strings) will be reallocated
+// (empty strings get a new 1-byte buffer for a '\0' byte
+StrPtr NewStr( CALLS_ Str old, ALLOCATOR_PTR(alloc) );
 
 // * Utility Functions
 
@@ -1020,8 +1029,8 @@ int64 SpxQueryIfInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids *, int64 or_els
 #if 0
 // Not currently used
 bool SpxQueryBool(CALLS_ SpxPlans, Datum args[], bool *null_ret);
-StrPtr SpxQueryStr(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
 #endif
+StrPtr SpxQueryStr(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
 SpxText SpxQueryText(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
 
 /* Unplanned Queries */
@@ -1155,11 +1164,6 @@ FUNCTION_DECLARE(spx_item_to_singleton); // item -> [item]
 FUNCTION_DECLARE(spx_test_planned_queries); // item -> [item]
 
 #endif
-
-/* type conversion */
-
-SpxText SpxStrText( CALLS_ StrPtr s, ALLOCATOR_PTR(allocator) );
-StrPtr SpxTextStr( CALLS_ SpxText td, ALLOCATOR_PTR(allocator) );
 
 #ifndef SPX_C
 #include "last-tag.h"

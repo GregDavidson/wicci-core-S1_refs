@@ -18,7 +18,6 @@ static const char spx_version[] = "$Id: spx.c,v 1.3 2007/07/24 04:27:47 greg Exp
  */
 
 #include "spx.h"
-#include <utils/builtins.h>
 #include <utils/hsearch.h>
 #include <utils/lsyscache.h>
 #define MODULE_TAG(name) spx_##name
@@ -32,8 +31,6 @@ static const char spx_version[] = "$Id: spx.c,v 1.3 2007/07/24 04:27:47 greg Exp
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
 #endif
-
-ALLOCATOR_FUNCTION(SessionAlloc) { return malloc(size); }
 
 // * Reference Counting
 
@@ -1048,7 +1045,10 @@ FUNCTION_DEFINE(spx_proc_call_proc_str) {
 						 caller->arg_type_oids, num_call_args
 	);
 	//	PG_RETURN_CSTRING( NewStr(CALL_ buf, CallAlloc) );
-	PG_RETURN_CSTRING( NewStr(CALL_ buf, palloc) );
+	UtilStr s = NewStr(CALL_ buf, call_palloc);
+	if (s)
+		PG_RETURN_CSTRING( NewStr(CALL_ buf, call_palloc) );
+	PG_RETURN_NULL();
 }
 
 extern SpxPlans SpxProcTypesQueryPlan(
@@ -1292,16 +1292,17 @@ FUNCTION_DEFINE(spx_init) {
 	SPX_FUNC_NUM_ARGS_IS(0);
 	SpxInit(_CALL_);
 	Initialize();
-	//	PG_RETURN_CSTRING( NewStr(CALL_ spx_version, CallAlloc) );
-	PG_RETURN_CSTRING( NewStr(CALL_ spx_version, palloc) );
+	// CallAssert(spx_version); // always true
+	PG_RETURN_CSTRING( NewStr(CALL_ spx_version, call_palloc) );
 }
 
 FUNCTION_DEFINE(spx_collate_locale) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(0);
 	SpxInit(_CALL_);
-	//	PG_RETURN_CSTRING( NewStr(CALL_ setlocale(LC_COLLATE, 0), CallAlloc) );
-	PG_RETURN_CSTRING( NewStr(CALL_ setlocale(LC_COLLATE, 0), palloc) );
+	UtilStr s = NewStr(CALL_ setlocale(LC_COLLATE, 0), call_palloc);
+	CallAssert(s);
+	PG_RETURN_CSTRING(s);
 }
 
 /* Utility Function Definitions */
@@ -1322,14 +1323,7 @@ FUNCTION_DEFINE(spx_stack_limit) {
 // connect to SPI context
 extern int StartSPX(_CALLS_) {
 	CALL_LINK();
-#if 0
-	if (InSPX(_CALL_) ) {
-		CALL_WARN_OUT("SPX push /\\ %d", StackedSPX(_CALL_) + 1);
-		SPI_push();
-	}
-#else
 	AssertNotSPX(_CALL_);
-#endif
 	const int status = SPI_connect();
 	CallAssertMsg(status >= 0, "status %d", status);
 	return IncSPX(_CALL_);
@@ -1343,14 +1337,7 @@ extern int FinishSPX(CALLS_ int start_level) {
 	const int status = SPI_finish();
 	CallAssertMsg(status >= 0, "status %d", status);
 	DecSPX(_CALL_);
-	#if 0
-	if ( InSPX(_CALL_) ) {
-		CALL_WARN_OUT("SPX pop \\/ %d", StackedSPX(_CALL_));
-		SPI_pop();
-	}
-#else
 	AssertNotSPX(_CALL_);
-#endif
 	return StackedSPX(_CALL_);
 }
 
@@ -1442,8 +1429,10 @@ FUNCTION_DEFINE(spx_schema_by_id) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(1);
 	const SpxSchemas s = SpxSchemaById(CALL_ PG_GETARG_INT32(0) );
-	//	if (s) PG_RETURN_CSTRING( NewStr(CALL_ s->name, CallAlloc) );
-	if (s) PG_RETURN_CSTRING( NewStr(CALL_ s->name, palloc) );
+	if (s) {
+		CallAssert(s->name);
+		PG_RETURN_CSTRING( NewStr(CALL_ s->name, call_palloc) );
+	}
 	PG_RETURN_NULL();
 }
 
@@ -1452,7 +1441,7 @@ FUNCTION_DEFINE(spx_schema_by_oid) {
 	SPX_FUNC_NUM_ARGS_IS(1);
 	const SpxSchemas s = SpxSchemaByOid(CALL_ PG_GETARG_OID(0) );
 	//	if (s) PG_RETURN_CSTRING( NewStr(CALL_ s->name, CallAlloc) );
-	if (s) PG_RETURN_CSTRING( NewStr(CALL_ s->name, palloc) );
+	if (s) PG_RETURN_CSTRING( NewStr(CALL_ s->name, call_palloc) );
 	PG_RETURN_NULL();
 }
 
@@ -1502,7 +1491,7 @@ FUNCTION_DEFINE(spx_type_by_oid) {
 	SPX_FUNC_NUM_ARGS_IS(1);
 	const SpxTypes t = SpxTypeByOid(CALL_  PG_GETARG_OID(0) );
 	//	if (t) PG_RETURN_CSTRING( NewStr(CALL_ t->name, CallAlloc) );
-	if (t) PG_RETURN_CSTRING( NewStr(CALL_ t->name, palloc) );
+	if (t) PG_RETURN_CSTRING( NewStr(CALL_ t->name, call_palloc) );
 	PG_RETURN_NULL();
 }
 
@@ -1548,7 +1537,7 @@ FUNCTION_DEFINE(spx_proc_by_oid) {
 	CALL_DEBUG_OUT(C_SIZE_FMT(sizeof buf), C_SIZE_VAL(sizeof buf));
 	CallAssert( sizeof buf == 1 + SpxProcSig(CALL_ buf, sizeof buf, p) );
 	//	PG_RETURN_CSTRING( NewStr(CALL_ buf, CallAlloc) );
-	PG_RETURN_CSTRING( NewStr(CALL_ buf, palloc) );
+	PG_RETURN_CSTRING( NewStr(CALL_ buf, call_palloc) );
 }
 
 #endif
@@ -1604,14 +1593,14 @@ extern void SpxPlanNvargs(
 	}
 }
 
-static StrPtr StrValueSPX(	// use new push and pop ???
+// SPI_push and SPI_pop are now no-ops
+// use new push and pop ???
+static StrPtr StrValueSPX(
 	CALLS_ HeapTuple row, TupleDesc rowdesc, const int col
 ) {
-//  CALL_LINK();
-	const int col1 = col+1;
-	SPI_push();
-	char *const s1 = SPI_getvalue(row,  rowdesc, col1); // memory ??? !!!
-	SPI_pop();
+	CALL_LINK();
+	char *const s1 = SPI_getvalue(row,  rowdesc, col+1);
+
 	return s1;
 }
 
@@ -1640,20 +1629,10 @@ extern Datum RowColDatumType( CALLS_ const int row, const int col,
 	CallAssertMsg( SPI_result != SPI_ERROR_NOATTRIBUTE,
 	"row %d, col %d", row, col );
 	CallAssertMsg(SPI_tuptable, "%d, %d", row, col );
-#if 0
-	CALL_DEBUG_OUT( "%d, %d -> %s::%s = %s",
-	row, col,
-	SPI_fname(SPI_tuptable->tupdesc, col1),
-	SPI_gettype(SPI_tuptable->tupdesc, col1),
-	StrValueSPX(
-		CALL_ SPI_tuptable->vals[row], SPI_tuptable->tupdesc, col1
-	)	);
-#else
 	CALL_DEBUG_OUT( "%d, %d -> %s::%s",
 			 row, col,
 			 SPI_fname(SPI_tuptable->tupdesc, col1),
 			 SPI_gettype(SPI_tuptable->tupdesc, col1) );
-#endif
 	if ( *is_null_ptr ) {
 		if (is_null_ret)
 			CALL_DEBUG_OUT( "%d, %d -> NULL", row, col );
@@ -1768,7 +1747,7 @@ extern StrPtr RowColStrPtr(CALLS_ int row, int col) {
 			 "%d, %d out of range", row, col );
 	CallAssertMsg(
 	SPI_result != SPI_ERROR_NOOUTFUNC, "row %d, col %d", row, col );
-	CALL_DEBUG_OUT( "Returning %s", s );
+	CALL_DEBUG_OUT( "Returning %s", s ?: "NULL" );
 	return s;
 }
 
@@ -1783,8 +1762,14 @@ extern SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
 	CALLS_LINK();
 	const StrPtr s = RowColStrPtr(CALL_  row, col);
 	WARN_OUT("%s: row %d, col %d, value %s", __func__, row, col, s ?: "NULL");
-	const SpxText vc = SpxStrText( CALL_ s, alloc );
-	return vc;
+	// cstring_to_text is NOT NULL-ptr safe!
+	text *const tp = cstring_to_text_with_len(s, s ? strlen(s) : 0);
+	{ // paranoid testing: !!
+		char *const s2 = text_to_cstring(tp);
+		CallAssert(!strcmp(s ?: "NULL", s2 ?: "NULL"));
+		pfree(s2);
+  }
+	return (SpxText){tp};
 }
 
 // execute a query plan returning status
@@ -2060,6 +2045,8 @@ SpxQueryBool(CALLS_ SpxPlans plan, Datum args[], bool *is_null_ret) {
 	return RowColBool(CALL_ 0, 0, is_null_ret);
 }
 
+#endif
+
 // execute a query plan returning a String or NULL 
 StrPtr 
 SpxQueryStr(CALLS_ SpxPlans plan, Datum args[], ALLOCATOR_PTR(alloc)) {
@@ -2067,8 +2054,6 @@ SpxQueryStr(CALLS_ SpxPlans plan, Datum args[], ALLOCATOR_PTR(alloc)) {
 	Query1(CALL_ plan, args);
 	return RowColStr(CALL_ 0, 0, alloc);
 }
-
-#endif
 
 /* Call Graph Functions */
 
@@ -2079,7 +2064,7 @@ static TmpStrPtr JoinCallAccum(CALLS_ size_t accum) {
 	static const char separator[] = ".";
 	static const size_t sep_len = sizeof separator - 1;
 	if ( !_CALL_ ) {
-		result = (char *) palloc(accum + 1); // Was TmpAlloc!!
+		result = (char *) CALL_ALLOC(call_palloc, accum + 1);
 		*result = '\0';
 	} else {
 		const size_t fname_len = strlen(_CALL_->fname);
@@ -2101,21 +2086,62 @@ TmpStrPtr JoinCalls(_CALLS_) {
 		
 /* Memory Allocation Functions */
 
-/* Is there's an assert needed involving whether we're
-	 connected to an SPI session?
-*/
-
-#if 0
-/* allocate storage in our Parent's SPI context */
-ALLOCATOR_FUNCTION(CallAlloc) {
-	CALLS_LINK();
-	return InSPX(_CALL_) ? SPI_palloc(size) : palloc(size);
+ALLOCATOR_FUNCTION(SessionAlloc) {
+	CALL_LINK();
+	CallAssert(size < MaxAllocationSize);
+	return malloc(size);
 }
-/* allocate storage for duration of SPI call, i.e. in OUR SPI_context */
-ALLOCATOR_FUNCTION(TmpAlloc) {
+
+ALLOCATOR_FUNCTION(call_palloc) {
+	CALL_LINK();
+	AssertNotSPX(_CALL_);
+	CallAssert(size < MaxAllocationSize);
 	return palloc(size);
 }
-#endif
+
+ALLOCATOR_FUNCTION(call_SPI_palloc) {
+	CALL_LINK();
+	AssertSPX(_CALL_);
+	CallAssert(size < MaxAllocationSize);
+	return SPI_palloc(size);
+}
+
+void * CheckedAlloc(
+	CALLS_ size_t size, size_t max_size, ALLOCATOR_PTR(alloc)
+) {
+	CALL_LINK();
+	AssertThatMsg( size <= max_size,
+	C_SIZE_FMT(size) C_SIZE_FMT(max_size),
+	C_SIZE_VAL(size), C_SIZE_VAL(max_size) );
+  void * p = CALL_ALLOC(alloc, size);
+	AssertThat(p != NULL);
+	return p;
+}
+
+void * MemAlloc( CALLS_ size_t size, ALLOCATOR_PTR(alloc) ) {
+	CALL_LINK();
+	CallAssert( alloc);
+	return memset( CheckedAlloc(CALL_ size, MaxAllocationSize, alloc), 0, size );
+}
+
+char * StrAlloc( CALLS_ size_t size, ALLOCATOR_PTR(alloc) ) {
+	CALL_LINK();
+	CallAssert( alloc);
+	char * s = CheckedAlloc(CALL_ size+1, MaxTextStrLen, alloc);
+	s[size] = '\0';
+	return s;
+}
+
+// NULL => NULL
+// all other strings (including empty strings) will be reallocated
+// (empty strings get a new 1-byte buffer for a '\0' byte
+StrPtr NewStr( CALLS_ Str old, ALLOCATOR_PTR(alloc) ) {
+	CALLS_LINK();
+	CallAssert( alloc);
+	if (!old) return old;
+	return strcpy( StrAlloc(CALL_ strlen(old), alloc), old );
+}
+
 
 /* String <--> Conversion and Allocation Functions */
 
@@ -2125,6 +2151,7 @@ ALLOCATOR_FUNCTION(TmpAlloc) {
 // #define CStringGetTextP(c)
 //	DatumGetTextP(DirectFunctionCall1(textin, CStringGetDatum(c)))
 
+#if 0
 extern SpxText SpxStrText( CALLS_ StrPtr str, ALLOCATOR_PTR(alloc) ) {
 	CALLS_LINK();
 	if (str == NULL)
@@ -2137,7 +2164,7 @@ extern SpxText SpxStrText( CALLS_ StrPtr str, ALLOCATOR_PTR(alloc) ) {
 	SpxText td;
 	td.varchar = MemAlloc(CALL_ td_len, alloc);
 	SET_VARSIZE(td.varchar, td_len);
-	CallAssert(td_len < MaxAllocationSize);
+	CallAssert(td_len < MaxTextStrLen);
 	memcpy( VARDATA(td.varchar), str, str_len );
 	return td;
 }
@@ -2151,6 +2178,7 @@ extern StrPtr SpxTextStr( CALLS_ SpxText td, ALLOCATOR_PTR(alloc) ) {
 	const size_t len = VARSIZE_ANY_EXHDR(td.varchar);
 	return memcpy( StrAlloc(CALL_ len, alloc), VARDATA_ANY(td.varchar), len);
 }
+#endif
 
 /* String Concatenation and Allocation Functions */
 
@@ -2343,7 +2371,7 @@ static inline SpxArrayInfo ZeroArrayInfo(
 	CALL_LINK();
 	CallAssert(a == 0 || alloc == 0);
 	static const struct array_info zip;
-	if (a == 0) a = alloc(sizeof *a );
+	if (a == 0) a = CALL_ALLOC(alloc, sizeof *a );
 	*a = zip;
 	a->dims = a->dims_array;
 	a->base = a->base_array;
