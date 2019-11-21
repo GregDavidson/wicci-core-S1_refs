@@ -1,7 +1,4 @@
-/*
- * Header
-
-	Wicci Project C Code Header
+/* * Wicci Project C Code Header
 	Enhancement to PostgreSQL Server Programming Interface
 
  ** Copyright
@@ -21,6 +18,8 @@
 
 #ifndef SPX_H
 #define SPX_H
+
+/* * Include Files */
 
 #include <stdlib.h>
 #include <stdarg.h>
@@ -58,19 +57,85 @@ static inline int spx_aligned_length(UtilCStr s) {
 	return spx_aligned_size( strlen(s) + 1 );
 }
 
-// * Reference Counted Dynamic Allocation Support
+/* * Reference Counted Dynamic Allocation Support */
 
 /* First field of reference counted object MUST be:
 	struct spx_ref_count ref_count;
-	 There must be NO cycles in reference paths!
+	* Consider hiding the struct spx_ref_count object under the managed data object instead??
+	* There must be NO cycles in reference paths!
  */
 
+// variable-sized structure
 typedef const struct spx_ref_count {
 	int count;		// when 0, object is garbage
 	struct spx_ref_count *prev, *next; // for TheWheel
 	char *end_ptr;		     // end of the complete object
+	spx_ref_count *our_list; // a list we're part of
 } *SpxObj;
 typedef struct spx_ref_count *SpxObjPtr;
+
+extern struct spx_ref_count TheWheel
+
+/* *** Usage of spx_ref_count and its fields As I prepare to
+	 change how I'm using this, i.e. preparing to have this be
+	 /under/ allocated structures rather than /within/ them as
+	 their first field, I'm realizing that I could use better
+	 C analysis tools - and I know they exist.  Rather than
+	 distract myself at this time in finding and learning
+	 them, I'll just use rg and grep and some donkey work!
+*/
+
+/* **** Usage of spx_ref_count 
+grep -nwB 1 spx_ref_count {spx,ref}.{h,c}
+/* **** Usage of count
+ rg '[.>]count' spx.h spx.c refs.h refs.c
+spx.h functions
+- SpxRefIncr
+- SpxRefDecr
+*/
+/* **** Usage of prev or next
+ rg '[.>]end_ptr' spx.h spx.c refs.h refs.c
+spx.c functions
+- SpxAttach
+- SpxDetach
+- SpxTryFreeOne
+- SpxTryFreeSome
+ */
+/* **** Usage of end_ptr
+rg '[.>]end_ptr' spx.h spx.c refs.h refs.c
+spx.h: 
+- spx_ref_in
+- spx_ref_is_end
+- spx_ref_alloc
+spx.c:
+- LoadProcs (near the end)
+ */
+
+#if 0
+// Example:
+
+const struct foo_cache {
+	struct spx_ref_count ref_count;
+	// other foo fields
+} *Foos;
+struct foo *FooPtr;
+
+// Given: struct foo_cache a_foo, *fp = &a_foo;
+// Assert: (char *) &fp == (char *) &fp->ref_count
+#endif
+
+static inline new_spx_obj_hdr(void *spx_obj_ptr) {
+	SpxObjPtr p = (SpxObjPtr) spx_obj_ptr - 1;
+	if (p->our_list == TheWheel)
+		return p;
+	WARN_OUT("arg %p not on our_list", arg);
+	return 0;											/* NULL */
+}
+
+static inline bool new_spx_ref_in(void *spx_obj_ptr, void *ptr) {
+	SpxObjPtr obj = new_spx_obj_hdr(spx_obj_ptr);
+	return (char *) ptr > (char *) obj && (char *) ptr < obj->end_ptr;
+}
 
 // ptr points within allocation of obj
 static inline bool spx_ref_in(SpxObj obj, void *ptr) {
@@ -78,18 +143,49 @@ static inline bool spx_ref_in(SpxObj obj, void *ptr) {
 }
 #define SPX_REF_IN(o, ptr) spx_ref_in(&(o)->ref_count, (ptr))
 
+static inline bool new_spx_ref_is_end(void *spx_obj_ptr, void *ptr) {
+	SpxObjPtr obj = new_spx_obj_hdr(spx_obj_ptr);
+	return (char *) ptr == obj->end_ptr;
+}
+
 // ptr points to end (just past allocation) of obj
 static inline bool spx_ref_is_end(SpxObj obj, void *ptr) {
 	return (char *) ptr == obj->end_ptr;
 }
 #define SPX_REF_IS_END(o, ptr) spx_ref_is_end(&(o)->ref_count, (ptr))
 
-// allocate object, all 0 except for end_ptr
+static inline void *new_spx_ref_alloc(size_t size) {
+	SpxObjPtr hdr = calloc(size + sizeof *obj, 1);
+	hdr->count = 1;
+	p->next = TheWheel.next;
+	p->prev = &TheWheel;
+	TheWheel.next = TheWheel.next->prev = p;
+	hdr->end_ptr = (char *) obj + size;
+	hdr->our_list = &TheWheel;
+	SpxObjPtr obj = hdr + 1;			// soon to go
+	obj->end_ptr = hdr->end_ptr; // soon to go
+	return obj;									 // just return hdr + 1
+}
+
+// why aren't we finishing initializing the object???
 static inline void *spx_ref_alloc(size_t size) {
 	SpxObjPtr obj = calloc(size, 1);
 	obj->end_ptr = (char *) obj + size;
 	return obj;
 }
+/* I'm not seeing initialization complete!  Usage:
+rg -w spx_ref_alloc
+  * spx.c
+LoadSchemaPath:573:		spx_ref_alloc( sizeof *sp + num_rows*sizeof *sp->path);
+LoadSchemas:620:	const SchemaCachePtr cache = spx_ref_alloc(
+LoadTypes:814:	const TypeCachePtr cache = spx_ref_alloc(
+LoadProcs:1175:	const ProcCachePtr cache = spx_ref_alloc(
+ * refs.c
+LoadToms:171:		spx_ref_alloc(sizeof *cache + num_rows * sizeof *cache->tom);
+LoadTocs:642:		spx_ref_alloc( toc_cache_end(&toc) - (char *) &toc );
+ *  Are we, in fact, actually using TheWheel??
+ * I'm not finding any calls to SpxTryFreeOne or SpxTryFreeSome??
+ */
 
 // free p or add it to TheWheel
 void SpxTryFreeOne(CALLS_ SpxObjPtr p);
@@ -121,7 +217,7 @@ static inline int SpxRefDecr(CALLS_ SpxObj o) {
 	*pp = p && SpxRefDecr(CALL_ &p->ref_count) ? p : 0 ;		\
 })
 
-// * Schema Cache
+/* * Schema Cache */
 
 /* schema and search_path functionality
 	 consider hiding behind a functional interface
@@ -130,6 +226,7 @@ static inline int SpxRefDecr(CALLS_ SpxObj o) {
 typedef int SchemaIds;				 // our assigned IDs
 typedef Oid SchemaOids;				 // PostgreSQL's assigned OIDs
 
+// variable-sized structure
 typedef const struct spx_schema {
 	SchemaIds id;
 	SchemaOids oid;
@@ -163,6 +260,7 @@ static inline bool SchemaNull(SpxSchemas s) {return !s||!s->oid;}
 #define MAX_SCHEMAS 1000	// make plenty big!!
 
 typedef const struct spx_schema_cache  *SpxSchemaCache;
+// variable-sized structure
 struct spx_schema_cache {
 	struct spx_ref_count ref_count;	// must be 1st field!!
 	int min_id, max_id;
@@ -187,6 +285,7 @@ spx_schema_cache_by_oid(SpxSchemaCache cache) {
 }
 
 typedef const struct spx_schema_path *SpxSchemaPath;
+// variable-sized structure
 struct spx_schema_path {
 	struct spx_ref_count ref_count;	// must be 1st field!!
 	SpxSchemaCache schema_cache;
@@ -215,7 +314,7 @@ void SpxSchemaPathCheck(CALLS_ SpxSchemaPath path);
 
 int SpxLoadSchemaPath(_CALLS_);
 
-// * Stored Query Plans
+/* * Stored Query Plans */
 
 /* Creating Stored Query Plans is expensive, not least
 	 because creating multiple plans cannot be batched.
@@ -235,6 +334,7 @@ int SpxLoadSchemaPath(_CALLS_);
 		be a first-class datatype which independently store more of their
 		meta-data.
  */
+// was a variable-sized structure
 typedef struct {
 #if 0
 	struct spx_ref_count ref_count;	// must be 1st field!!
@@ -272,7 +372,7 @@ static inline SpxPlans SpxNoPlan(void) {
 #define SPX_PLAN_FMT FMT_LF2(plan, "%p", FMT_lf_(nargs," %d"))
 #define SPX_PLAN_VAL(qplan) ((qplan).plan), ((qplan).num_args)
 
-// * Text Datatype
+/* * Text Datatype */
 
 /* Automating memory for extended postgres objects:
 	 (1) Wrap each kind of varlena in a structure
@@ -353,7 +453,7 @@ StrPtr SpxTextStr( CALLS_ SpxText td, ALLOCATOR_PTR(allocator) );
 
 #endif
 
-// * Types
+/* * Types */
 
 /* In order to make queries and check the datatypes returned we need
 	 access to the PostgreSQL oids assigned to the types of some
@@ -420,6 +520,7 @@ void SpxRequireTypes(CALLS_ SpxTypeOids *types, bool reinit);
 // Here's the newer type code:
 
 #define MAX_TYPES 10000	// make plenty big!
+// variable-sized structure
 typedef const struct spx_type {
 	Oid oid;
 	SpxSchemas schema;
@@ -447,6 +548,7 @@ static inline SpxTypeOids SpxTypeOid(SpxTypes t) {
 #endif
 
 typedef const struct spx_type_cache *SpxTypeCache;
+// variable-sized structure
 struct spx_type_cache {
 	struct spx_ref_count ref_count;	// must be 1st field!!
 	SpxSchemaCache schema_cache;
@@ -470,11 +572,12 @@ SpxTypes SpxTypeByName(CALLS_ StrPtr name);
 int32 SpxLoadTypes(_CALLS_); // returns count, frees any old types
 void SpxTypeCacheCheck(CALLS_ SpxTypeCache cache);
 
-// * Procedure Cache
+/* * Procedure Cache */
 
 #define MAX_PROCS 10000	// make plenty big!
 #define SPX_PROC_MAX_ARGS (9)
 // see StoredProcSql and LoadStoredProc before changing!
+// variable-sized structure
 typedef const struct spx_proc {
 	Oid oid;
 	SpxSchemas schema;
@@ -576,6 +679,7 @@ static inline ProcInitResult SpxRequireQueryPlan(
 }
 
 typedef const struct spx_proc_cache *SpxProcCache;
+// variable-sized structure
 struct spx_proc_cache {
 	struct spx_ref_count ref_count;	// must be 1st field!!
 	SpxSchemaCache schema_cache;
@@ -600,7 +704,7 @@ SpxProcs SpxProcByName(CALLS_ StrPtr name);
 int SpxLoadProcs(_CALLS_);
 void SpxProcCacheCheck(CALLS_ SpxProcCache cache);
 
-// * Cache Management
+/* * Cache Management */
 
 typedef const struct spx_caches {
 	SpxSchemaCache schema_cache;
@@ -612,7 +716,7 @@ typedef const struct spx_caches {
 struct spx_caches SpxCurrentCaches(void);
 void SpxCheckCaches(CALLS_ SpxCaches caches);
 
-// * Errors
+/* * Errors */
 
 // Warning: will break if codes change!!
 enum query_codes {
@@ -662,7 +766,7 @@ static inline StrPtr SpxQueryDecode(enum query_codes code) {
 	].name;
 }
 
-// * SPI Connection
+/* * SPI Connection */
 
 int StartSPX(_CALLS_);				// post::InSPX(calls)
 int FinishSPX(CALLS_ int start_level);	// pre:InSPX(calls)
@@ -692,7 +796,7 @@ static inline void RequireSpxSPX(_CALLS_) {
 		SpxInitSPX(_CALL_);  // ...SPX ???
 }
 
-// * PostgreSQL Interface Functions
+/* * PostgreSQL Interface Functions */
 
 #if 0
 
@@ -729,14 +833,95 @@ bool get_call_expr_arg_stable(fmNodePtr expr, int argnum);
 	PG_FUNCTION_INFO_V1(f);	\
 	FUNCTION_DECLARE(f)
 
-static inline int SpxFuncNargs(PG_FUNCTION_ARGS) { return fcinfo->nargs; }
-static inline Datum * SpxFuncArgs(PG_FUNCTION_ARGS) { return fcinfo->arg; }
+static inline int SpxFuncNargs(PG_FUNCTION_ARGS) { return PG_NARGS(); }
+
+#if 0
+// **	PgSQL 12.0 SPI API Change!!
+// before and after we have in fmgr.h:
+#define PG_FUNCTION_ARGS	FunctionCallInfo fcinfo
+typedef struct FunctionCallInfoBaseData *FunctionCallInfo;
+
+// ***	Before PostgreSQL 12.0 we have in fmgr.h:
+typedef Datum (*PGFunction) (FunctionCallInfo fcinfo);
+
+typedef struct FunctionCallInfoData {
+	// ...
+	Datum		arg[FUNC_MAX_ARGS]; /* Arguments passed to function */
+	bool		argnull[FUNC_MAX_ARGS]; /* T if arg[i] is actually NULL */
+// ...
+}
+// along with the macros in fmgr.h which we weren't using:
+#define PG_ARGISNULL(n)  (fcinfo->argnull[n])
+#define PG_GETARG_DATUM(n)	 (fcinfo->arg[n])
+
+//***  With PostgreSQL 12.0 this changes to:
+
+typedef struct FunctionCallInfoData *FunctionCallInfo;
+	
+typedef struct FunctionCallInfoBaseData {
+	// ...
+	NullableDatum args[FLEXIBLE_ARRAY_MEMBER];
+	// ...
+} FunctionCallInfoBaseData;
+// and we have the new data structure:
+typedef struct NullableDatum {
+	Datum		value;
+	bool		isnull;
+} NullableDatum;
+// and the macros have changed to 											
+#define PG_ARGISNULL(n)  (fcinfo->args[n].isnull)
+#define PG_GETARG_DATUM(n)	 (fcinfo->args[n].value)
+// So we'd best change the Wicci to use those macros!!!
+#endif
+
+#if 0
+// *** We've been using this to pass arguments for queries
+ static inline Datum * SpxFuncArgs(PG_FUNCTION_ARGS) { return fcinfo->arg; }
+// But the SPI query functions require contiguous args, e.g.:
+
+// Now we're going to have to copy them into temporary storage
+// ***  How are we going to handle it?
+// We could create space on the stack and copy everything there
+// We could do things like
+// /usr/local/src/postgresql-12.0/src/backend/executor/spi.c 2444
+static ParamListInfo
+_SPI_convert_params(int nargs, Oid *argtypes,
+										Datum *Values, const char *Nulls);
+// and
+// /usr/local/src/postgresql-12.0/src/backend/nodes/params.c 31
+ParamListInfo makeParamList(int numParams);
+
+/*
+We could find the undocumented but widely used function which allows directly calling a function given its procedure oid and use that!
+- FunctionCallInvoke
+// fmgr.h 167
+#define FunctionCallInvoke(fcinfo)	((* (fcinfo)->flinfo->fn_addr) (fcinfo))
+// check out: /usr/local/src/postgresql-12.0/src/backend/tcop/fastpath.c
+// Oo, oo, check out:
+// /usr/local/src/postgresql-12.0/src/backend/utils/fmgr/fmgr.c
+// backend/utils/sort/sortsupport.c
+// maybe also
+// backend/utils/adt/rowtypes.c
+// backend/utils/adt/arrayfuncs.c
+
+We could get the PostgreSQL core team to add a stable version of the latter to the SPI API and then use it.
+
+But we're set up to use stored procedures, so let's go with that for now!
+*/
+#endif
+
+// Returns the number of null arguments
+// !!args gets copies of non-null Datums into corresponding elements
+// !!is_nulls gets 1/0 for is_null into corresponding elements of is_nulls if non-null
+int SpxFuncArgs(PG_FUNCTION_ARGS, Datum args[], char is_nulls[]);
+
+
 static inline bool SpxFuncStrict(PG_FUNCTION_ARGS) { return fcinfo->flinfo->fn_strict; }
 static inline bool SpxFuncReturnsSet(PG_FUNCTION_ARGS) {
 	return fcinfo->flinfo->fn_retset;
 }
 static inline bool SpxFuncArgNull(PG_FUNCTION_ARGS, int n) {
-	return fcinfo->argnull[n];
+	return PG_ARGISNULL(n);
 }
 static inline Oid SpxFuncOid(PG_FUNCTION_ARGS) { return fcinfo->flinfo->fn_oid; }
 static inline Oid SpxFuncArgType(PG_FUNCTION_ARGS, int n) {
@@ -810,7 +995,7 @@ int SpxCheckArgs(
 	 "arg %d type_oid %d", n, actual  );				\
 })
 
-// * Allocator Functions
+/* * Allocator Functions */
 
 /* MaxAllocationSize will help prevent memory problems, and
 	 postpones having to deal with toasting tuples. It will be necessary
@@ -847,7 +1032,7 @@ static const size_t MaxTorNameSize = 40; // !!! prototype debugging !!!
 // #define CALL_ALLOC(alloc, size) alloc(size)
 #define CALL_ALLOC(alloc, size) alloc(_CALL_, size)
 
-// * Allocation Function Declarations
+/* * Allocation Function Declarations */
 
 /* These used to be defined here as static inline functions
  * but then they got instrumented and needed access to
@@ -873,7 +1058,7 @@ char * StrAlloc( CALLS_ size_t size, ALLOCATOR_PTR(alloc) );
 // (empty strings get a new 1-byte buffer for a '\0' byte
 StrPtr NewStr( CALLS_ Str old, ALLOCATOR_PTR(alloc) );
 
-// * Utility Functions
+/* * Utility Functions */
 
 /* Warning!!!
  * Stored procedures

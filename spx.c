@@ -1,6 +1,5 @@
 static const char spx_version[] = "$Id: spx.c,v 1.3 2007/07/24 04:27:47 greg Exp greg $";
-/*
- * Header
+/* * Header
 
 	Wicci Project C Code
 	Enhancement to PostgreSQL Server Programming Interface
@@ -32,10 +31,40 @@ static const char spx_version[] = "$Id: spx.c,v 1.3 2007/07/24 04:27:47 greg Exp
 PG_MODULE_MAGIC;
 #endif
 
-// * Reference Counting
+/* * Reference Counted Dynamic Allocation Support */
+
+/* The Idea of TheWheel
+
+	 At some point in the past, it seemed that we needed to
+	 worry that sometimes we might need to allocate a new one
+	 of these key dynamically allocated structures when
+	 something has changed, but an old one might still be in
+	 use concurrently.  So we created TheWheel.  But can this
+	 really happen?  It seems to me now that there will only
+	 be one thread using one connection, so only one request
+	 will be being processed by one connection at a time.  If
+	 we discover that we need to do anything which invalidates
+	 any of the caches, we could just signal to the Shim to
+	 consider any current connections obsolete and to close
+	 them as soon as they're done with their current task, or
+	 immediately if they're in the pool.  If I'm missing
+	 something, hopefully it's all documented somewhere!
+	 -  jgd - 17 November 2019
+
+	 OK, but what about when we add a PostgreSQL system entity
+	 which needs to be in our cache, so we call the Load
+	 functions to reload the appropriate cache.  It may well
+	 be too soon to throw away the old cache.  A good time to
+	 throw away the old caches would be when we acquire a
+	 connection for reuse.  At that time we could legitimately
+	 throw away all existing caches and build new ones.  Thus,
+	 we wouldn't need a fancy system for GCing them sooner.
+	 - jgd - 20 November 2019
+ */
 
 // objects that are not current but can't yet be freed go on TheWheel
-static struct spx_ref_count TheWheel = {1, &TheWheel, &TheWheel};
+// was static - maybe can be again??  Otherwise s/The/SpxObj/ !!!
+struct spx_ref_count TheWheel = {1, &TheWheel, &TheWheel};
 
 // Attach the given object to TheWheel
 static inline void SpxAttach(CALLS_ SpxObjPtr p) {
@@ -68,6 +97,7 @@ extern void SpxTryFreeOne(CALLS_ SpxObjPtr p) {
 }
 
 // free any objects on TheWheel that are no longer in use
+// When do we imagine we might need this??
 extern void SpxTryFreeSome(_CALLS_) {
 	CALL_LINK();
 	// SpxObjPtr p, next;
@@ -77,7 +107,21 @@ extern void SpxTryFreeSome(_CALLS_) {
 	}
 }
 
-// * function call checking
+/* * function call checking */
+
+int SpxFuncArgs(PG_FUNCTION_ARGS, Datum arg[], char is_null[]) {
+	int null_count = 0, nargs = PG_NARGS(), i;
+	for (i = 0; i < nargs; i++) {
+		if ( PG_ARGISNULL(i) ) {
+			++null_count;
+			if ( is_null ) is_null[i] = 1;
+		} else {
+			if ( arg ) arg[i] = PG_GETARG_DATUM(i);
+			if ( is_null ) is_null[i] = 0;
+		}
+	}
+	return null_count;
+}
 
 extern bool SpxCheckArgNonNull(
 	CALLS_ PG_FUNCTION_ARGS, enum spx_check_levels level, int arg
@@ -214,7 +258,7 @@ extern int SpxCheckArgs(
 	return SpxCheckArgCount(CALL_ fcinfo, level, arg, arg) ? arg : 0;
 }
 
-/* initialization */
+/* * enumerations */
 
 _Static_assert(Query_Error_Unknown + 1 ==  SPI_ERROR_TYPUNKNOWN, "TYPUNKNOWN");
 _Static_assert(Query_Ok_Unknown - 1 == SPI_OK_REWRITTEN, "OK_REWRITTEN");
@@ -277,6 +321,8 @@ const struct spx_query_decodes Spx_Query_Decode[] = {
 	{ Query_Ok_Unknown, "Ok_Unknown" } // dummy end
 };
 
+/* * SpxTypes */
+
 /* Some key statically known PostgreSQL core datatypes;
  * initialization is easy as these are given in
  *	"server/catalog/see pg_type.h"
@@ -319,12 +365,14 @@ extern void SpxRequireTypes(CALLS_ SpxTypeOids *types, bool reinit) {
 		}
 }
 
+/* * Initialization */
+
 const SpxText Spx_Null_Text = { 0 };
 
 int  spx_init__ = 0;
 int spx_connected__ = 0;
 
-// * Spx Schemas
+/* * Spx Schemas */
 
 /* Schemas are cached in a single heap allocation.
 		First, the contents of the declared fields:
@@ -718,7 +766,7 @@ FUNCTION_DEFINE(spx_load_schema_path) {
 	PG_RETURN_INT32(num_schemas);
 }
 
-// * Spx Types
+/* * Spx Types */
 
 /* Types are cached in a single heap allocation.
 		First, the contents of the declared fields:
@@ -884,7 +932,7 @@ FUNCTION_DEFINE(spx_load_types) {
 	PG_RETURN_INT32(load_count);
 }
 
-// * Spx Procedures
+/* * Spx Procedures */
 
 /* Procs are cached in a single heap allocation.
  * First, the contents of the declared fields:
@@ -1258,7 +1306,7 @@ FUNCTION_DEFINE(spx_load_procs) {
 	PG_RETURN_INT32(load_count);
 }
 
-// * General Initialization
+/* * General Initialization */
 
 extern struct spx_caches SpxCurrentCaches(void) {
 	return (struct spx_caches){
