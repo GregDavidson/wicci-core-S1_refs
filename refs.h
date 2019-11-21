@@ -1,5 +1,4 @@
-/*
- * Header
+/* * Header
 
 	Wicci Project
 	PostgreSQL Server-side C Code Header File
@@ -15,6 +14,8 @@
  *
  */
 
+/* * Include Files */
+
 #ifndef REFS_H
 #define REFS_H
 
@@ -26,9 +27,9 @@
 #define ThisTag Ref
 #define this_tag ref
 
-// * Method management
+/* * Method management */
 
-// ** methods
+/* ** methods */
 
 typedef const struct typed_object_method {
 	ref_tags tag;
@@ -38,6 +39,7 @@ typedef const struct typed_object_method {
 } *Toms;
 
 typedef const struct tom_cache *RefTomCache;
+// variable-sized structure
 struct tom_cache {
 	struct spx_ref_count ref_count;	// must be 1st field!!
 	struct spx_caches spx_caches;
@@ -47,9 +49,9 @@ struct tom_cache {
 
 void RefTomCacheCheck(CALLS_ RefTomCache cache);
 
-// * Macros and Functions
+/* * Macros and Functions */
 
-// ** Method Management
+/* ** Method Management */
 
 /* Load all of the Toms into new storage.  If there were any
 	 previously loaded descriptions, transfer over any of the query
@@ -84,7 +86,7 @@ static inline void RefsRequired(_CALLS_) {
 	CallAssert(RefsInitialized());
 }
 
-// * type crefs stuff
+/* * type crefs stuff */
 
 /* C References (CRefs) are references to arbitrary C data structures
 	 which can be passed through PostgreSQL but are opaque to it.
@@ -123,14 +125,14 @@ enum crefs_tags {
 #endif
 
 
-// * type ref stuff
+/* * type ref stuff */
 
 /* A Typed Object Reference (REF) is a one-word value
 	 consisting of a type-tag and a row id.  The type-tag
 	 is associated with a PostgreSQL domain and table.
  */
 
-// **  Low level Utility Functions:
+/* **  Low level Utility Functions: */
 
 FUNCTION_DECLARE(refs_null);	// void ->  NULL
 
@@ -142,15 +144,15 @@ FUNCTION_DECLARE(refs_max_tag);	// void -> ref_tags
 FUNCTION_DECLARE(refs_min_id);	// void -> ref_ids
 FUNCTION_DECLARE(refs_max_id);	// void -> ref_ids
 
-// ** ref (de)construction:
+/* ** ref (de)construction: */
 
 FUNCTION_DECLARE(ref_tag);		// ref -> ref_tags
 FUNCTION_DECLARE(ref_id);		// ref -> ref_ids
 FUNCTION_DECLARE(unchecked_ref_from_tag_id);	// ref_tags, ref_ids -> ref
 
-// ** Fundamental ref operations:
+/* ** Fundamental ref operations: */
 
-// *** SQL API:
+/* *** SQL API: */
 
 FUNCTION_DECLARE(call_in_method);	// (cstring) -> ref
 /* Given an XML description of a desired object,
@@ -171,19 +173,19 @@ FUNCTION_DECLARE(call_out_method);	// ref -> cstring
 // Should this convert context-dependent types to xml?
 // Right now, each type decides for itself!
 
-// * op method dispatch
+/* * op method dispatch */
 
-// ** op method dispatch without wicci magic
+/* ** op method dispatch without wicci magic */
 
 FUNCTION_DECLARE(call_text_method); // ref, env, crefs, ... -> Text
 FUNCTION_DECLARE(call_scalar_method); // ref, env, crefs, ... -> Scalar Value
 
-// ** op method dispatch with wicci magic
+/* ** op method dispatch with wicci magic */
 
 FUNCTION_DECLARE(ref_env_crefs_etc_text_op); // ref, env, crefs, ... -> Text
 FUNCTION_DECLARE(ref_env_crefs_etc_scalar_op); // ref, env, crefs, ... -> Scalar Value
 
-// ** Calling an operation with altered crefs
+/* ** Calling an operation with altered crefs */
 
 // oftd !!!
 // (regprocedure,from ref[],to ref[],ref, ref,ref_env,crefs ...)-->text
@@ -193,7 +195,7 @@ FUNCTION_DECLARE(oftd_ref_env_crefs_etc_text_op);
 // (regprocedure,from ref[],to ref[],ref, ref,ref_env,crefs ...)-->scalar
 FUNCTION_DECLARE(oftd_ref_env_crefs_etc_scalar_op);
 
-// ** ref btree index comparison function
+/* ** ref btree index comparison function */
 
 FUNCTION_DECLARE(ref_cmp);	// (ref, ref) -> (-1, 0, +1)
 /* Used for btree indexes.
@@ -204,7 +206,7 @@ FUNCTION_DECLARE(ref_cmp);	// (ref, ref) -> (-1, 0, +1)
 	 (3) Switching to hash indexes might be better+++
 */
 
-// ** Utility Functions and macros:
+/* ** Utility Functions and macros: */
 
 /* Convert a strange ref to a string, including the
  * calling function context and perhaps a message
@@ -240,7 +242,7 @@ static inline refs RefNil(void) {
 	return RefTagNil(0);
 }
 
-// ** tag macros, enums and declarations
+/* ** tag macros, enums and declarations */
 
 /* Tag enum identifiers have the pattern name##s_tag
  * Tag functions identifiers have the pattern  name##_tag
@@ -284,9 +286,9 @@ static inline refs RefNil(void) {
 	DEF_TAG_PREDICATE(SQL_TAG_ISA_(name), C_TAG_ISA_(Name))	\
 	DEF_REF_PREDICATE(SQL_REF_ISA_(name), C_REF_ISA_(Name))
 
-// * ref tags
+/* * ref tags */
 
-// ** enum ref_tags
+/* ** enum ref_tags */
 
 /* It is best if tags of classes which share operations
 	 are contiguous.  Ideally the tree of Ref types would
@@ -322,13 +324,13 @@ enum ref1_tags {
 
 #define LAST_REF_TAG after_env_tags
 
-// ** TAG_DECLAREs
+/* ** TAG_DECLAREs */
 
 TAG_DECLARE(ref_nil)						// TAG --> DATUM
 
-// ** TAG_RANGEs
+/* ** TAG_RANGEs */
 
-// ** SpxTypeOids declarations
+/* ** SpxTypeOids declarations */
 
 // pgsql type oids corresponding to key Ref types
 static inline SpxTypeOids RefTagIntType() { return Int32_Type; }
@@ -345,7 +347,7 @@ extern SpxTypeOids Refs_Type;
 #endif
 
 
-// * Obsolete or postponable?
+/* * Obsolete or postponable? */
 
 #if 0
 
@@ -355,7 +357,7 @@ extern SpxTypeOids Refs_Type;
 	 being useful, but don't trust that any of this works!
  */
 
-// ** tom_dispatch
+/* ** tom_dispatch */
 
 /*
 	The TomsArray is sorted by (operation, tag).
@@ -387,7 +389,7 @@ struct tom_dispatch {
 };
 #endif
 
-// * classes
+/* * classes */
 
 typedef const struct typed_object_class {
 	ref_tags tag;
@@ -406,9 +408,11 @@ typedef const struct typed_object_class {
 #if 0
 	TomDispatch *struct typed_object_method methods[0];
 #endif
-} *Tocs;
+} *Tocs, **TocsPtr;
 
+// when would size != max_tag + 1?
 typedef const struct toc_cache *RefTocCache;
+// variable-sized structure
 struct toc_cache {
 	struct spx_ref_count ref_count;	// must be 1st field!!
 	struct spx_caches spx_caches;
@@ -416,20 +420,46 @@ struct toc_cache {
 	int size;
 	ref_tags max_tag;
 #if 1
-	struct typed_object_class toc[0]; // not really
+	// this is the end of the fixed-length fields
+	struct typed_object_class toc[0];
 #else
+	// this is what's real but C doesn't do variable array sizes in structures
+	//	struct typed_object_class toc[max_tag + 1];
 	struct typed_object_class toc[max_tag + 1];
 	Tocs by_type_tag[size];		// sorted by (1) type oid, (1) tag
 	Tocs by_class_type[size];		// sorted by (1) class oid, (2) type oid
 #endif
 };
 
-static inline Tocs *toc_cache_by_type(RefTocCache cache) {
-	return (Tocs *) (cache->toc + cache->max_tag + 1);
+// return pointer to first struct
+static inline Tocs toc_cache_toc_start(RefTocCache cache) {
+	return cache->toc; 
 }
 
-static inline Tocs *toc_cache_by_table(RefTocCache cache) {
-	return toc_cache_by_type(cache) + cache->size;
+// return pointer just past last struct
+static inline Tocs toc_cache_toc_end(RefTocCache cache) {
+	return toc_cache_toc_start(cache) + cache->max_tag + 1;
+}
+
+// return pointer to first struct pointer
+static inline TocsPtr toc_cache_by_type_tag_start(RefTocCache cache) {
+	return (TocsPtr) toc_cache_toc_end(cache);
+}
+
+static inline TocsPtr toc_cache_by_type_tag_end(RefTocCache cache) {
+	return toc_cache_by_type_tag_start(cache) + cache->size;
+}
+
+static inline TocsPtr toc_cache_by_class_type_start(RefTocCache cache) {
+	return toc_cache_by_type_tag_end(cache);
+}
+
+static inline TocsPtr toc_cache_by_class_type_end(RefTocCache cache) {
+	return toc_cache_by_class_type_start(cache) + cache->size;
+}
+
+static inline char *toc_cache_end(RefTocCache cache) {
+	return (char *) toc_cache_by_class_type_end(cache);
 }
 
 FUNCTION_DECLARE(refs_load_tocs);	// void -> tocs count INT32

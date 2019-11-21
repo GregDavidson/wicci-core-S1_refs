@@ -27,9 +27,9 @@ static const char refs_module_id[] = "$Id: ref.c,v 1.5 2007/07/24 04:27:48 greg 
 #include "catalog/pg_type.h"
 #include <access/htup_details.h> // for BITMAPLEN
 
-// * Method Management
+/* * Method Management */
 
-// ** method table
+/* ** method table */
 
 /* The method table is a simple array sorted by
 	(1) operation, (2) tag
@@ -219,7 +219,7 @@ FUNCTION_DEFINE(refs_load_toms) {	// () -> integer (count)
 	PG_RETURN_INT32( count );
 }
 
-// ** method plans
+/* ** method plans */
 
 /* Make a plan to call the specified procedure with arguments
 	 of the given types except for the first argument.
@@ -359,7 +359,7 @@ static void TomToValue(
 	}
 }
 
-// * op method dispatch without wicci magic
+/* * op method dispatch without wicci magic */
 
 static void RefEtcToValue(
 	PG_FUNCTION_ARGS /*fcinfo*/,		// we use this
@@ -383,8 +383,10 @@ static void RefEtcToValue(
 	const Toms tom = MethodForOpRefSpx(CALL_ op, ref, num_args);
 	CallAssertMsg( tom, "no method proc for " SPX_PROC_OID_FMT,
 		 SPX_PROC_OID_VAL(SpxFuncOid(fcinfo)) );
+	Datum args[num_args];
+	(void) SpxFuncArgs(fcinfo, args, 0);
 	TomToValue(
-		 CALL_ tom, SpxFuncArgs(fcinfo), SpxFuncNargs(fcinfo),
+		 CALL_ tom, args, SpxFuncNargs(fcinfo),
 		 text_ret, null_ret, datum_ret
 	);
 	FinishSPX(CALL_ level);
@@ -422,8 +424,9 @@ FUNCTION_DEFINE(call_scalar_method) {
 	PG_RETURN_DATUM(value);
 }
 
-// * Class Management
+/* * Class Management */
 
+// Pointers to non-const structures
 typedef struct typed_object_class *TocPtr;
 typedef struct toc_cache *TocCachePtr;
 TocCachePtr Toc_Cache = 0;
@@ -465,7 +468,7 @@ static inline Tocs GetToc(CALLS_ ref_tags tag) {
 	return &Toc_Cache->toc[tag];
 }
 
-static int cmp_tocs_by_table_type(const void *const p1, const void *const p2) {
+static int cmp_tocs_by_class_type(const void *const p1, const void *const p2) {
 	const Tocs a = *(Tocs *) p1, b = *(Tocs *) p2;
 	const int diff = a->table - b->table;
 	return diff ? diff : a->type->oid - b->type->oid;
@@ -486,7 +489,7 @@ static int cmp_tocs_by_type(const void *const p1, const void *const p2) {
 static Tocs FirstTocByType(CALLS_ SpxTypes type) {
 	struct typed_object_class target, *const target_ptr = &target;
 	target.type = type;
-	Tocs *const start = toc_cache_by_type(Toc_Cache);
+	Tocs *const start = toc_cache_by_type_tag_start(Toc_Cache);
 	Tocs *p = bsearch(
 	&target_ptr, start, Toc_Cache->size, sizeof *start,
 	cmp_tocs_by_type
@@ -543,13 +546,14 @@ static Tocs TocByTableType(CALLS_ Oid table, SpxTypes type) {
 	struct typed_object_class target, *const target_ptr = &target;
 	target.table = table;
 	target.type = type;
-	Tocs *const start = toc_cache_by_table(Toc_Cache);
+	Tocs *const start = toc_cache_by_class_type_start(Toc_Cache);
 	Tocs *p = bsearch(
-	&target_ptr, start, Toc_Cache->size, sizeof *start,
-	cmp_tocs_by_table_type
+		&target_ptr, start,
+		Toc_Cache->size,
+		sizeof *start,
+		cmp_tocs_by_class_type
 	);
-	if (!p) return 0;
-	return *p;
+	return p ? *p : 0;
 }
 
 FUNCTION_DEFINE(refs_table_type_to_tag) {
@@ -598,8 +602,8 @@ FUNCTION_DEFINE(refs_debug_tocs_by_type) {
 		CALL_DEBUG_OUT("Toc_Cache NULL");
 		PG_RETURN_INT32( -1 );
 	}
-	Tocs *const start = toc_cache_by_type(Toc_Cache);
-	Tocs *const end = start + Toc_Cache->size;
+	Tocs *const start = toc_cache_by_type_tag_start(Toc_Cache);
+	Tocs *const end = toc_cache_by_type_tag_end(Toc_Cache);
 	for (Tocs *p = start; p < end ; p++ )
 		DebugToc(CALL_ *p);
 	PG_RETURN_INT32( Toc_Cache->size );
@@ -616,32 +620,52 @@ static TocCachePtr LoadTocs(_CALLS_) {
 	};
 	// make the query plan
 	static SpxPlans plan;
-	SpxPlan0( CALL_ &plan, select);
-	const int num_rows = SpxQueryDB(plan, NULL, REF_MAX_TAG);
-	const int max_tag = RowColInt32(CALL_ 0, maxtag_, Ref_Tags_Type, 0);
-	const int num_tags = max_tag + 1; // since 0 is a legal tag
-	CallAssertMsg( num_rows > 0 && num_rows <= num_tags,
-		 "num_rows: %d, num_tags: %d", num_rows, num_tags );
-	// CALL_DEBUG_OUT("num_rows %d", num_rows);
+	SpxPlan0( CALL_ &plan, select );
+	struct toc_cache toc;
+	toc.size = SpxQueryDB(plan, NULL, REF_MAX_TAG);
+	toc.max_tag = RowColInt32(CALL_ 0, maxtag_, Ref_Tags_Type, 0);
+	if (toc.size != toc.max_tag + 1) {
+		CALL_WARN_OUT(
+									"toc.size: %d max_tag+1:  %d",
+									 toc.size, toc.max_tag+1
+									);
+	}
+
+	const int num_tags = toc.max_tag + 1; // since 0 is a legal tag
+	CallAssertMsg( toc.size > 0 && toc.size <= num_tags,
+		 "toc.size: %d, num_tags: %d", toc.size, num_tags );
+	// CALL_DEBUG_OUT("toc.size %d", toc.size);
 
 	// make room for the results
+	// how might this go wrong if size != max_tag + 1 ???
 	TocCachePtr cache =
-		spx_ref_alloc( sizeof *cache
-			+ num_tags * sizeof *cache->toc
-			+ num_rows * sizeof *toc_cache_by_type(cache)
-			+ num_rows * sizeof *toc_cache_by_table(cache)  );
+		spx_ref_alloc( toc_cache_end(&toc) - (char *) &toc );
 	CallAssert(cache);
-	cache->size = num_rows;
-	cache->max_tag = max_tag;
+	cache->size = toc.size;
+	cache->max_tag = toc.max_tag;
 	cache->spx_caches = SpxCurrentCaches();
 	cache->tom_cache = Tom_Cache;
-	TocPtr *by_type = (TocPtr *) toc_cache_by_type(cache);
-	TocPtr *by_class = (TocPtr *) toc_cache_by_table(cache);
-	TocPtr *const end_ptr = by_class + num_rows;
-	CallAssert( SPX_REF_IS_END( cache, end_ptr ) );
-	for (int row = 0; row < num_rows; row++) {  // load rows
+	// C doesn't have the const_cast operator of C++
+	// we will need to use a dangerous unrestricted  cast
+	// ultimately we'll want to use these ptr to ptr to struct variables
+	TocPtr *by_type = 0;					// no constness
+	TocPtr *by_class = 0;					// no constness
+	// assignment adding constness should give no warning
+	// this checks that type is same other than constness
+	// alas, gcc gives a warning - is this right??
+	TocsPtr const_by_type = by_type;
+	TocsPtr const_by_class = by_class;
+	//  get the values
+	const_by_type = toc_cache_by_type_tag_start(cache);
+	const_by_class = toc_cache_by_class_type_start(cache);
+	// Now cast away the const-ness of the underlying struct
+	by_type = (TocPtr*) const_by_type;
+	by_class = (TocPtr*) const_by_class;
+	
+	CallAssert( SPX_REF_IS_END( cache, toc_cache_by_class_type_end(cache) ) );
+	for (int row = 0; row < toc.size; row++) {  // load rows
 		const int tag = RowColInt32(CALL_ row, tag_, Ref_Tags_Type, 0);
-		CallAssert(tag >= 0 && tag <= max_tag);
+		CallAssert(tag >= 0 && tag <= toc.max_tag);
 		CallAssert(SPX_REF_IN(cache, by_type));
 		CallAssert(SPX_REF_IN(cache, by_class));
 		const TocPtr toc = *by_class++ = *by_type++ = &cache->toc[tag];
@@ -664,12 +688,12 @@ static TocCachePtr LoadTocs(_CALLS_) {
 	}
 	CallAssert( SPX_REF_IS_END( cache, by_class ) );
 	qsort(
-		toc_cache_by_type(cache),			cache->size,
-		sizeof *toc_cache_by_type(cache),	cmp_tocs_by_type_tag
+		toc_cache_by_type_tag_start(cache),			cache->size,
+		sizeof *toc_cache_by_type_tag_start(cache),	cmp_tocs_by_type_tag
 	);
 	qsort(
-		toc_cache_by_table(cache),		cache->size,
-		sizeof *toc_cache_by_table(cache),	cmp_tocs_by_table_type
+		toc_cache_by_class_type_start(cache),		cache->size,
+		sizeof *toc_cache_by_class_type_start(cache),	cmp_tocs_by_class_type
 	);
 	return cache;
 }
@@ -692,7 +716,7 @@ FUNCTION_DEFINE(refs_load_tocs) {	// () -> integer (count)
 	PG_RETURN_INT32( count );
 }
 
-// * type crefs
+/* * type crefs */
 
 /* To do: Generalize crefs so that all crefs data is accessed
  through a vector indexed by crefs_tags, then the crefs framework
@@ -862,7 +886,7 @@ FUNCTION_DEFINE(ref_crefs_graft) {
 	return RefGetDatum(ref2);
 }
 
-// ** tags
+/* ** tags */
 
 FUNCTION_DEFINE(refs_base_init) {
 	CALL_BASE();
@@ -878,7 +902,7 @@ FUNCTION_DEFINE(refs_base_init) {
 	PG_RETURN_CSTRING( NewStr(CALL_ refs_module_id, call_palloc) );
 }
 
-// * Low level Utility Functions
+/* * Low level Utility Functions */
 
 // I don't get why this is needed???
 FUNCTION_DEFINE(refs_null) {	// void -> NULL
@@ -911,21 +935,21 @@ FUNCTION_DEFINE(refs_max_id) {	// void -> ref_ids
 
 /* ref (de)construction */
 
-// ** ref_tag(ref) ->  ref_tags
+/* ** ref_tag(ref) ->  ref_tags */
 FUNCTION_DEFINE(ref_tag) {
 	AssertThat(SpxFuncNargs(fcinfo) == 1);
 // Should I warn if the tag is unknown???
 	return TagGetDatum( RefTag( GetArgRef(0) ) );
 }
 
-// ** ref_id(ref) -> ref_ids	-- not a tag function!
+/* ** ref_id(ref) -> ref_ids	-- not a tag function! */
 FUNCTION_DEFINE(ref_id) {
 	AssertThat(SpxFuncNargs(fcinfo) == 1);
 // Should I warn if the tag is unknown???
 	return IdGetDatum( RefId( GetArgRef(0) ) );
 }
 
-// ** unchecked_ref_from_tag_id(ref_tags, ref_ids) -> ref
+/* ** unchecked_ref_from_tag_id(ref_tags, ref_ids) -> ref */
 FUNCTION_DEFINE(unchecked_ref_from_tag_id) {
 	enum {tag_arg, id_arg, num_args};
 	AssertThat(SpxFuncNargs(fcinfo) == num_args);
@@ -944,7 +968,7 @@ FUNCTION_DEFINE(unchecked_ref_from_tag_id) {
 	return RefGetDatum( ref );
 }
 
-// * Fundamental ref type operations:
+/* * Fundamental ref type operations: */
 
 TAG_DEFINE(ref_nil)						// TAG --> DATUM
 
@@ -1006,8 +1030,11 @@ FUNCTION_DEFINE(call_in_method) { // ** cstring -> some ref type
 	) );
 	bool is_null;
 	SpxTypeOids result_type;
+	const 	int num_args = SpxFuncNargs(fcinfo);
+	Datum args[num_args];
+	(void) SpxFuncArgs(fcinfo, args, 0);
 	const refs result = UpdateRefType(
-		toc->in_plan, SpxFuncArgs(fcinfo), &result_type, &is_null
+		toc->in_plan, args, &result_type, &is_null
 	);
 	FinishSPX(CALL_ level);
 	if ( result_type.type_oid != ret_type->oid )
@@ -1066,8 +1093,10 @@ FUNCTION_DEFINE(call_out_method) {	//  ref -> cstring
 		CALL_ toc->out, CString_Type,
 		&Refs_Type.type_oid, 1, &toc->out_plan
 	);
+	Datum args[num_args];
+	(void) SpxFuncArgs(fcinfo, args, 0);
 	UtilStr s = SpxQueryStr(
-		CALL_ toc->out_plan, SpxFuncArgs(fcinfo), call_SPI_palloc
+		CALL_ toc->out_plan, args, call_SPI_palloc
 	);
 	FinishSPX(CALL_ level);
 	if (s)
@@ -1079,7 +1108,7 @@ FUNCTION_DEFINE(call_out_method) {	//  ref -> cstring
 	PG_RETURN_NULL();
 }
 
-// ** op method dispatch with wicci magic
+/* ** op method dispatch with wicci magic */
 
 enum {ref_arg, ref_env_arg, crefs_arg, num_args_with_crefs};
 
@@ -1123,13 +1152,17 @@ static void RefEnvCrefsEtcToValue(
 	//	CallAssert(SpxFuncStrict(fcinfo));
 	CallAssert(!SpxFuncReturnsSet(fcinfo));
 	const int level = StartSPX(_CALL_);
-	Datum args[SpxFuncNargs(fcinfo)];
+	// New boiler plate, check that it's really ok!!
+	int num_args =  SpxFuncNargs(fcinfo);
+	Datum args[num_args];
+	Datum op_args[num_args];
+	(void) SpxFuncArgs(fcinfo, op_args, 0);
 	const Toms tom = OpCrefsArgsToTom(
 		CALL_ SpxFuncOid(fcinfo), crefs,
-		args, SpxFuncArgs(fcinfo), SpxFuncNargs(fcinfo)
+		args, op_args, num_args
 	);
 	TomToValue(
-		 CALL_ tom, SpxFuncArgs(fcinfo), SpxFuncNargs(fcinfo),
+		 CALL_ tom, op_args, num_args,
 		 text_ret, null_ret, datum_ret
 	);
 	FinishSPX(CALL_ level);
@@ -1151,7 +1184,7 @@ FUNCTION_DEFINE(ref_env_crefs_etc_scalar_op) {
 	return value;
 }
 
-// * Calling an operation with altered crefs
+/* * Calling an operation with altered crefs */
 
 // It might be better to move the opt_arg_ to the end of the oft_args
  
@@ -1279,8 +1312,14 @@ static void OftdRefEnvCrefsEtcToValue(
 	Datum args[num_args];
 	const int level = StartSPX(_CALL_);
 	const Oid op = PG_GETARG_OID(op_arg_);
+	// New boilerplate - check that it's really correct!
+	int num_op_args =  SpxFuncNargs(fcinfo);
+	Datum op_args[num_op_args];
+	(void) SpxFuncArgs(fcinfo, op_args, 0);
+	// Looks like I don't really need to have copied all the arguments??
+	// go through this 
 	const Toms tom = OpCrefsArgsToTom(
-		CALL_ op, &crefs, args, SpxFuncArgs(fcinfo)+num_oft_args, num_args
+		CALL_ op, &crefs, args, op_args+num_oft_args, num_args
 	);
 	TomToValue(
 		CALL_ tom, args, num_args, text_ret, null_ret, datum_ret
@@ -1305,7 +1344,7 @@ FUNCTION_DEFINE(oftd_ref_env_crefs_etc_scalar_op) {
 	return value;
 }
 
-// * Comparison operators
+/* * Comparison operators */
 
 /* Of course, we could just compare them as
  * integer values.  I'd eventually like to move
