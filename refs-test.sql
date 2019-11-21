@@ -77,6 +77,13 @@ SELECT test_func(
 	5::ref_ids
 );
 
+SELECT pg_backend_pid();
+
+-- \cd /home/greg/Projects/Wicci/Core/S1_refs/
+-- sudo gdb -i=mi /usr/local/SW.d/pgsql-12.0/bin/postgres -p 22022
+-- requires nopasswd in sodoers
+-- substitute appropriate pid
+
 SELECT test_func( 
 	'ref_text_op(refs)',
 	ref_text_op( ref_nil() ),
