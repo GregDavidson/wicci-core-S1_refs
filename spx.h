@@ -1,9 +1,9 @@
-/* * Wicci Project C Code Header
+/* * Wicci Project Spx C Code Header
 	Enhancement to PostgreSQL Server Programming Interface
 
  ** Copyright
 
-	Copyright (c) 2005-2009 J. Greg Davidson.
+	Copyright (c) 2005-2019 J. Greg Davidson.
 	You may use this software under the terms of the
 	GNU AFFERO GENERAL PUBLIC LICENSE
 	as specified in the file LICENSE.md included with this distribution.
@@ -70,11 +70,11 @@ typedef const struct spx_ref_count {
 	int count;		// when 0, object is garbage
 	struct spx_ref_count *prev, *next; // for TheWheel
 	char *end_ptr;		     // end of the complete object
-	spx_ref_count *our_list; // a list we're part of
+	struct spx_ref_count *our_list; // a list we're part of
 } *SpxObj;
 typedef struct spx_ref_count *SpxObjPtr;
 
-extern struct spx_ref_count TheWheel
+extern struct spx_ref_count TheWheel;
 
 /* *** Usage of spx_ref_count and its fields As I prepare to
 	 change how I'm using this, i.e. preparing to have this be
@@ -87,6 +87,7 @@ extern struct spx_ref_count TheWheel
 
 /* **** Usage of spx_ref_count 
 grep -nwB 1 spx_ref_count {spx,ref}.{h,c}
+*/
 /* **** Usage of count
  rg '[.>]count' spx.h spx.c refs.h refs.c
 spx.h functions
@@ -124,51 +125,55 @@ struct foo *FooPtr;
 // Assert: (char *) &fp == (char *) &fp->ref_count
 #endif
 
-static inline new_spx_obj_hdr(void *spx_obj_ptr) {
+static inline SpxObjPtr spx_obj_hdr(void *spx_obj_ptr) {
 	SpxObjPtr p = (SpxObjPtr) spx_obj_ptr - 1;
-	if (p->our_list == TheWheel)
+	if (p->our_list == &TheWheel)
 		return p;
-	WARN_OUT("arg %p not on our_list", arg);
+	WARN_OUT("arg %p not on our_list", spx_obj_ptr);
 	return 0;											/* NULL */
 }
 
-static inline bool new_spx_ref_in(void *spx_obj_ptr, void *ptr) {
-	SpxObjPtr obj = new_spx_obj_hdr(spx_obj_ptr);
+static inline bool spx_ref_in(void *spx_obj_ptr, void *ptr) {
+	SpxObjPtr obj = spx_obj_hdr(spx_obj_ptr);
 	return (char *) ptr > (char *) obj && (char *) ptr < obj->end_ptr;
 }
 
+#if 0
 // ptr points within allocation of obj
-static inline bool spx_ref_in(SpxObj obj, void *ptr) {
+static inline bool old_spx_ref_in(SpxObj obj, void *ptr) {
 	return (char *) ptr > (char *) obj && (char *) ptr < obj->end_ptr;
 }
-#define SPX_REF_IN(o, ptr) spx_ref_in(&(o)->ref_count, (ptr))
+#define OLD_SPX_REF_IN(o, ptr) spx_ref_in(&(o)->ref_count, (ptr))
+#endif
 
-static inline bool new_spx_ref_is_end(void *spx_obj_ptr, void *ptr) {
-	SpxObjPtr obj = new_spx_obj_hdr(spx_obj_ptr);
-	return (char *) ptr == obj->end_ptr;
+static inline bool spx_ref_is_end(void *spx_obj_ptr, void *ptr) {
+	SpxObjPtr obj = spx_obj_hdr(spx_obj_ptr);
+	return obj->end_ptr == (char *) ptr;
 }
 
 // ptr points to end (just past allocation) of obj
-static inline bool spx_ref_is_end(SpxObj obj, void *ptr) {
-	return (char *) ptr == obj->end_ptr;
+static inline bool old_spx_ref_is_end(SpxObj obj, void *ptr) {
+	return obj->end_ptr == (char *) ptr ;
 }
-#define SPX_REF_IS_END(o, ptr) spx_ref_is_end(&(o)->ref_count, (ptr))
+#define SPX_REF_IS_END(obj, ptr) \
+	spx_ref_is_end((obj), (ptr))
 
-static inline void *new_spx_ref_alloc(size_t size) {
-	SpxObjPtr hdr = calloc(size + sizeof *obj, 1);
-	hdr->count = 1;
-	p->next = TheWheel.next;
-	p->prev = &TheWheel;
-	TheWheel.next = TheWheel.next->prev = p;
-	hdr->end_ptr = (char *) obj + size;
-	hdr->our_list = &TheWheel;
-	SpxObjPtr obj = hdr + 1;			// soon to go
-	obj->end_ptr = hdr->end_ptr; // soon to go
-	return obj;									 // just return hdr + 1
+static inline void *spx_ref_alloc(size_t size) {
+	SpxObjPtr header = calloc(size + sizeof *header, 1);
+	header->count = 1;
+
+	// dup of code in SpxAttach:
+	header->next = TheWheel.next;
+	header->prev = &TheWheel;
+	TheWheel.next = TheWheel.next->prev = header;
+	
+	header->end_ptr = (char *) header + sizeof *header + size;
+	header->our_list = &TheWheel;
+	return header + 1;
 }
 
 // why aren't we finishing initializing the object???
-static inline void *spx_ref_alloc(size_t size) {
+static inline void *old_spx_ref_alloc(size_t size) {
 	SpxObjPtr obj = calloc(size, 1);
 	obj->end_ptr = (char *) obj + size;
 	return obj;
@@ -194,27 +199,36 @@ void SpxTryFreeOne(CALLS_ SpxObjPtr p);
 void SpxTryFreeSome(_CALLS_);
 
 // increment reference count of given object
-static inline int SpxRefIncr(SpxObj o) {
-	SpxObjPtr p = (SpxObjPtr) o;
-	return ++p->count;
+static inline int SpxRefIncr(SpxObjPtr p) {
+	return p && ++p->count;
 }
 #define SPX_REF_INCR(struct_ptr) ({			\
-	SpxRefIncr(&(struct_ptr)->ref_count);		\
-	struct_ptr;							\
+			SpxRefIncr(spx_obj_hdr((void *)struct_ptr));	\
+			struct_ptr;																		\
 })
 
 // decrement ref count of object, try to free it
-static inline int SpxRefDecr(CALLS_ SpxObj o) {
+static inline int SpxRefDecr(CALLS_ SpxObjPtr p) {
 	CALLS_LINK();
-	SpxObjPtr p = (SpxObjPtr) o;
-	int new_count = --p->count;
-	SpxTryFreeOne(CALL_ p);
+	// need new_count in case we deallocate *p
+	int new_count = p->count;
+	if (p->count > 0) {
+		--new_count;
+		p->count = new_count;;
+		if (new_count == 0)
+			SpxTryFreeOne(CALL_ p);
+	}
 	return new_count;
 }
-#define SPX_REF_DECR(struct_ptr) ({						\
-	__typeof__(struct_ptr) *pp = &(struct_ptr), p = *pp;		\
-	_Static_assert( !p || (void *) p == (void *) &p->ref_count, "SPX_REF_DECR" );	\
-	*pp = p && SpxRefDecr(CALL_ &p->ref_count) ? p : 0 ;		\
+
+/* Decrement any positive count.  If it's reached 0, then NULL out the
+	 pointer which is referencing it. 
+	 This line was in the previous version:
+	 _Static_assert( !p || (void *) p == (void *) &p->ref_count, "SPX_REF_DECR" );
+*/
+#define SPX_REF_DECR(struct_ptr) ({												\
+			__typeof__(struct_ptr) *pp = &(struct_ptr), p = *pp;	\
+			*pp = p && SpxRefDecr(CALL_ spx_obj_hdr((void *)p)) ? p : 0 ;							\
 })
 
 /* * Schema Cache */
@@ -262,7 +276,7 @@ static inline bool SchemaNull(SpxSchemas s) {return !s||!s->oid;}
 typedef const struct spx_schema_cache  *SpxSchemaCache;
 // variable-sized structure
 struct spx_schema_cache {
-	struct spx_ref_count ref_count;	// must be 1st field!!
+	//	struct spx_ref_count ref_count;	// must be 1st field!!
 	int min_id, max_id;
 	int size;
 #if 1				// not really
@@ -287,7 +301,7 @@ spx_schema_cache_by_oid(SpxSchemaCache cache) {
 typedef const struct spx_schema_path *SpxSchemaPath;
 // variable-sized structure
 struct spx_schema_path {
-	struct spx_ref_count ref_count;	// must be 1st field!!
+	//	struct spx_ref_count ref_count;	// must be 1st field!!
 	SpxSchemaCache schema_cache;
 	int size;
 	SpxSchemas path[0];
@@ -337,7 +351,7 @@ int SpxLoadSchemaPath(_CALLS_);
 // was a variable-sized structure
 typedef struct {
 #if 0
-	struct spx_ref_count ref_count;	// must be 1st field!!
+	//	struct spx_ref_count ref_count;	// must be 1st field!!
 #endif
 	void *plan;
 	int num_args;	// for safety check
@@ -550,7 +564,7 @@ static inline SpxTypeOids SpxTypeOid(SpxTypes t) {
 typedef const struct spx_type_cache *SpxTypeCache;
 // variable-sized structure
 struct spx_type_cache {
-	struct spx_ref_count ref_count;	// must be 1st field!!
+	//	struct spx_ref_count ref_count;	// must be 1st field!!
 	SpxSchemaCache schema_cache;
 	SpxSchemaPath schema_path;	// needed?
 	int size;
@@ -681,7 +695,7 @@ static inline ProcInitResult SpxRequireQueryPlan(
 typedef const struct spx_proc_cache *SpxProcCache;
 // variable-sized structure
 struct spx_proc_cache {
-	struct spx_ref_count ref_count;	// must be 1st field!!
+	//	struct spx_ref_count ref_count;	// must be 1st field!!
 	SpxSchemaCache schema_cache;
 	SpxSchemaPath schema_path;	// needed?
 	SpxTypeCache type_cache;

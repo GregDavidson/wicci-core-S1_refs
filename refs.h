@@ -1,4 +1,4 @@
-/* * Header
+/* * Wicci Project Object References C Code Header
 
 	Wicci Project
 	PostgreSQL Server-side C Code Header File
@@ -6,7 +6,7 @@
 
  ** Copyright
 
-	Copyright (c) 2005 - 2012 J. Greg Davidson.
+	Copyright (c) 2005 - 2019 J. Greg Davidson.
 	You may use this software under the terms of the
 	GNU AFFERO GENERAL PUBLIC LICENSE
 	as specified in the file LICENSE.md included with this distribution.
@@ -41,7 +41,7 @@ typedef const struct typed_object_method {
 typedef const struct tom_cache *RefTomCache;
 // variable-sized structure
 struct tom_cache {
-	struct spx_ref_count ref_count;	// must be 1st field!!
+	//	struct spx_ref_count ref_count;	// must be 1st field!!
 	struct spx_caches spx_caches;
 	int size;
 	struct typed_object_method tom[0];
@@ -414,7 +414,7 @@ typedef const struct typed_object_class {
 typedef const struct toc_cache *RefTocCache;
 // variable-sized structure
 struct toc_cache {
-	struct spx_ref_count ref_count;	// must be 1st field!!
+	//	struct spx_ref_count ref_count;	// must be 1st field!!
 	struct spx_caches spx_caches;
 	RefTomCache tom_cache;
 	int size;

@@ -1,6 +1,5 @@
 static const char refs_module_id[] = "$Id: ref.c,v 1.5 2007/07/24 04:27:48 greg Exp greg $";
-/*
- * Header
+/* * Wicci Project Object References C Code Module
 
 	Wicci Project
 	PostgreSQL Server-side C Code
@@ -8,7 +7,7 @@ static const char refs_module_id[] = "$Id: ref.c,v 1.5 2007/07/24 04:27:48 greg 
 
  ** Copyright
 
-	Copyright (c) 2005-2012 J. Greg Davidson.
+	Copyright (c) 2005-2019 J. Greg Davidson.
 	Although it is my intention to make this code available under
 	a Free Software license when it is ready, this code is
 	currently not to be copied nor shown to anyone without
@@ -205,7 +204,8 @@ extern int RefLoadToms(_CALLS_) {
 			; p < Tom_Cache->tom + Tom_Cache->size ; p++ )
 			SPX_FREE_PLAN(p->plan);
 	SPX_REF_DECR(Tom_Cache);
-	Tom_Cache = SPX_REF_INCR(cache);
+	//	Tom_Cache = SPX_REF_INCR(cache);
+	Tom_Cache = cache;
 	return cache->size;
 }
 
@@ -666,10 +666,10 @@ static TocCachePtr LoadTocs(_CALLS_) {
 	for (int row = 0; row < toc.size; row++) {  // load rows
 		const int tag = RowColInt32(CALL_ row, tag_, Ref_Tags_Type, 0);
 		CallAssert(tag >= 0 && tag <= toc.max_tag);
-		CallAssert(SPX_REF_IN(cache, by_type));
-		CallAssert(SPX_REF_IN(cache, by_class));
+		CallAssert(spx_ref_in(cache, by_type));
+		CallAssert(spx_ref_in(cache, by_class));
 		const TocPtr toc = *by_class++ = *by_type++ = &cache->toc[tag];
-		CallAssert(SPX_REF_IN(cache, toc));
+		CallAssert(spx_ref_in(cache, toc));
 		toc->tag = tag;
 		// CALL_DEBUG_OUT("row %d toc tag %d", row, toc->tag);
 		toc->table = RowColOid(CALL_ row, class_, Class_Type, 0);
@@ -702,7 +702,8 @@ extern int RefLoadTocs(_CALLS_) {
 	CALLS_LINK();
 	const TocCachePtr cache = LoadTocs(_CALL_);
 	SPX_REF_DECR(Toc_Cache);
-	Toc_Cache = SPX_REF_INCR(cache);
+	//	Toc_Cache = SPX_REF_INCR(cache);
+	Toc_Cache = cache;
 	return cache->size;
 }
 

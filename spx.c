@@ -1,12 +1,12 @@
 static const char spx_version[] = "$Id: spx.c,v 1.3 2007/07/24 04:27:47 greg Exp greg $";
-/* * Header
+/* * Wicci Project Spx C Code Module
 
 	Wicci Project C Code
 	Enhancement to PostgreSQL Server Programming Interface
 
  ** Copyright
 
-	Copyright (c) 2005,2006 J. Greg Davidson.
+	Copyright (c) 2005-2019 J. Greg Davidson.
 	You may use this software under the terms of the
 	GNU AFFERO GENERAL PUBLIC LICENSE
 	as specified in the file LICENSE.md included with this distribution.
@@ -35,30 +35,27 @@ PG_MODULE_MAGIC;
 
 /* The Idea of TheWheel
 
-	 At some point in the past, it seemed that we needed to
-	 worry that sometimes we might need to allocate a new one
-	 of these key dynamically allocated structures when
-	 something has changed, but an old one might still be in
-	 use concurrently.  So we created TheWheel.  But can this
-	 really happen?  It seems to me now that there will only
-	 be one thread using one connection, so only one request
-	 will be being processed by one connection at a time.  If
-	 we discover that we need to do anything which invalidates
-	 any of the caches, we could just signal to the Shim to
-	 consider any current connections obsolete and to close
-	 them as soon as they're done with their current task, or
-	 immediately if they're in the pool.  If I'm missing
-	 something, hopefully it's all documented somewhere!
-	 -  jgd - 17 November 2019
+	 This was intended as a simple Garbage Collection System
+	 for Cached Data that might need to be updated even though
+	 a transaction was still using it.  Given that this Cached
+	 Data is local to a Database Connection, it may not really
+	 be needed.  I've moved the mechanism for tracking the use
+	 of these caches to be less obtrusive (it's tucked under
+	 the allocated objects) and I'm disabling the automatic
+	 freeing of this memory when the reference count goes to 0.
 
-	 OK, but what about when we add a PostgreSQL system entity
-	 which needs to be in our cache, so we call the Load
-	 functions to reload the appropriate cache.  It may well
-	 be too soon to throw away the old cache.  A good time to
-	 throw away the old caches would be when we acquire a
-	 connection for reuse.  At that time we could legitimately
-	 throw away all existing caches and build new ones.  Thus,
-	 we wouldn't need a fancy system for GCing them sooner.
+	 A good time to throw away the old caches would be when we
+	 acquire a connection for reuse and have not yet submitted
+	 a new request.  At that time we could legitimately throw
+	 away all existing caches and build new ones.  If we judge
+	 this sufficient, we can throw away this whole mechanism.
+
+	 This assumes that all we're doing is processing Wicci Web
+	 requests.  Perhaps the scope of the Wicci Database will
+	 expand to where we'll be doing more with a single
+	 connection.  How would we ideally like our cache
+	 management to work?
+
 	 - jgd - 20 November 2019
  */
 
@@ -67,21 +64,28 @@ PG_MODULE_MAGIC;
 struct spx_ref_count TheWheel = {1, &TheWheel, &TheWheel};
 
 // Attach the given object to TheWheel
+// We're now attaching objects at allocation time.
+// Does this mean this code is now obsolete?
 static inline void SpxAttach(CALLS_ SpxObjPtr p) {
 	CALLS_LINK();
+#if 0
 	CallAssert(p && !p->next && !p->prev);
 	p->next = TheWheel.next;
 	p->prev = &TheWheel;
 	TheWheel.next = TheWheel.next->prev = p;
+#endif
 }
 
 // Detach the given object from TheWheel
 static inline void SpxDetach(CALLS_ SpxObjPtr p) {
 	CALLS_LINK();
 	CallAssert(p && p->next && p->prev);
+	CALL_WARN_OUT("Declining to Detach!");
+#if 0
 	p->prev->next = p->next;
 	p->next->prev = p->prev;
 	p->prev = p->next = 0;
+#endif
 }
 
 // free p or add it to TheWheel
@@ -89,11 +93,14 @@ extern void SpxTryFreeOne(CALLS_ SpxObjPtr p) {
 	CALL_LINK();
 	if (p == 0) return;
 	CallAssert(p->count >= 0);
+	CALL_WARN_OUT("Declining to Manage %p", p);
+#if 0
 	if ( p->count == 0 ) {
 		if (p->next) SpxDetach(CALL_ p);
 		free(p);
 	} else
 		if (!p->next) SpxAttach(CALL_ p);
+#endif
 }
 
 // free any objects on TheWheel that are no longer in use
@@ -101,10 +108,13 @@ extern void SpxTryFreeOne(CALLS_ SpxObjPtr p) {
 extern void SpxTryFreeSome(_CALLS_) {
 	CALL_LINK();
 	// SpxObjPtr p, next;
+	CALL_WARN_OUT("Declining to FreeSome");
+	#if 0
 	for (SpxObjPtr next, p = TheWheel.next; p != &TheWheel; p = next) {
 		next = p->next;
 		SpxTryFreeOne(CALL_ p);
 	}
+#endif
 }
 
 /* * function call checking */
@@ -617,7 +627,7 @@ static SpxSchemaPath LoadSchemaPath(_CALLS_) {
 		CALL_DEBUG_OUT("row %d schema id %d oid %d", row, id, s->oid);
 		*path_ptr++ = s;
 	}
-	CallAssert( SPX_REF_IS_END( sp, path_ptr ) );
+	CallAssert( spx_ref_is_end( sp, path_ptr ) );
 	return sp;
 }
 
@@ -625,7 +635,8 @@ extern int SpxLoadSchemaPath(_CALLS_) {
 	CALLS_LINK();
 	const SpxSchemaPath p = LoadSchemaPath(_CALL_);
 	SPX_REF_DECR(Spx_Schema_Path);
-	Spx_Schema_Path = SPX_REF_INCR(p);
+	//	Spx_Schema_Path = SPX_REF_INCR(p);
+	Spx_Schema_Path = p;
 	return p->size;
 }
 
@@ -674,7 +685,7 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 		);
 		cache->by_id[p->id] = *name_p++ =  *oid_p++ = p;
 		p = spx_schema_end(CALL_ p, name_size);
-		CallAssert( p->id < max_id || SPX_REF_IS_END( cache, p) );
+		CallAssert( p->id < max_id || spx_ref_is_end( cache, p) );
 	}
 	// qsort(	spx_schema_cache_by_name(cache),		cache->size,
 	//  		sizeof (SpxSchemas),	cmp_schemas_by_name	);
@@ -688,10 +699,9 @@ extern int SpxLoadSchemas(_CALLS_) {
 	CALLS_LINK();
 	CALL_DEBUG_OUT("Before LoadSchemas");
 	const SpxSchemaCache cache = LoadSchemas(_CALL_);
-	CALL_DEBUG_OUT("About to decrement the old Schema Cache");
 	SPX_REF_DECR(Spx_Schema_Cache);
-	CALL_DEBUG_OUT("About to increment the new Schema Cache");
-	Spx_Schema_Cache = SPX_REF_INCR(cache);
+	//	Spx_Schema_Cache = SPX_REF_INCR(cache);
+	Spx_Schema_Cache = cache;
 	return cache->size;
 }
 
@@ -875,7 +885,7 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 		*by_name++ =  *by_oid++ = p;
 		p = spx_type_end( CALL_ p, name_size );
 	}
-	CallAssert( SPX_REF_IS_END( cache, p ) );
+	CallAssert( spx_ref_is_end( cache, p ) );
 	CallAssert(name_size_sum == sum_text);
 	// qsort(	cache->by_name, 		cache->size,
 	//		sizeof *cache->by_name,	cmp_types_by_name );
@@ -889,7 +899,8 @@ extern int SpxLoadTypes(_CALLS_) {
 	CALLS_LINK();
 	const SpxTypeCache cache = LoadTypes(_CALL_);
 	SPX_REF_DECR(Spx_Type_Cache);
-	Spx_Type_Cache = SPX_REF_INCR(cache);
+	//	Spx_Type_Cache = SPX_REF_INCR(cache);
+	Spx_Type_Cache = cache;
 	return cache->size;
 }
 
@@ -1237,11 +1248,11 @@ static SpxProcCache LoadProcs(_CALLS_) {
 		*by_name++ =  *by_oid++ = p;
 		p = spx_proc_end(CALL_ p, name_size); // includes checking & debugging
 	}
-	CallAssertMsg( SPX_REF_IS_END(cache, p),
+	CallAssertMsg( spx_ref_is_end(cache, p),
 	C_PTRDIFF_FMT__ ";"
 	FMT_lf(max_args_accum,"%d") FMT_lf(sum_nargs,"%d")  ";"
 	FMT_lf(name_size_accum,"%d") FMT_lf(sum_text,"%d"),
-	C_PTRDIFF2_VAL(cache->ref_count.end_ptr, p),
+	C_PTRDIFF2_VAL(spx_obj_hdr(cache)->end_ptr, p),
 	max_args_accum, sum_nargs,
 	name_size_accum, sum_text
 	);
@@ -1263,7 +1274,8 @@ extern int SpxLoadProcs(_CALLS_) {
 	CALLS_LINK();
 	const SpxProcCache cache = LoadProcs(_CALL_);
 	SPX_REF_DECR(Spx_Proc_Cache);
-	Spx_Proc_Cache = SPX_REF_INCR(cache);
+	//	Spx_Proc_Cache = SPX_REF_INCR(cache);
+	Spx_Proc_Cache = cache;
 	return cache->size;
 }
 
