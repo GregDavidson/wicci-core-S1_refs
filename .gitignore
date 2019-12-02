@@ -22,8 +22,10 @@ XFiles
 .emacs.desktop
 GREG-READ
 STATUS
-bar.sql
-foo.sql
+bar.*
+foo.*
+*.foo
+*[.,+-]foo.*
 quiz.sh
 quiz.sql
 settings.sql-pre9.2
@@ -33,5 +35,4 @@ the-output
 wicci-today
 WICCI-C-FILES.refs
 WICCI-SQL-FILES.refs
-foo.c
 spx.i2
