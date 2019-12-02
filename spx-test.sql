@@ -28,17 +28,17 @@ SELECT set_file('spx-test.sql', '$Id');
 
 -- TABLE our_schemas_by_name;
 
--- SELECT spx_load_schemas();
+-- SELECT unsafe_spx_load_schemas();
 
 -- TABLE schema_path_by_id;
 
--- SELECT spx_load_schema_path();
+-- SELECT unsafe_spx_load_schema_path();
 
 -- SELECT spx_debug_schemas();
 
 -- TABLE our_types;
 
--- SELECT spx_load_types();
+-- SELECT unsafe_spx_load_types();
 
 -- SELECT spx_debug_types();
 
@@ -54,7 +54,7 @@ SELECT set_file('spx-test.sql', '$Id');
 
 -- TABLE our_procs;
 
--- SELECT spx_load_procs();
+-- SELECT unsafe_spx_load_procs();
 
 -- SELECT spx_debug_procs();
 

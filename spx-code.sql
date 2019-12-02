@@ -76,7 +76,7 @@ CREATE OR REPLACE VIEW type_view AS
 			SELECT SUM(name_size_)::bigint FROM type_view_
 	) AS foo(sum_text_);
 COMMENT ON VIEW type_view IS
-'Used by spx.so function spx_load_types';
+'Used by spx.so function unsafe_spx_load_types';
 
 -- ** proc_view
 
@@ -139,24 +139,38 @@ SELECT oid_::oid, (
 
 -- ** fundamental functions
 
+-- CREATE OR REPLACE
+-- FUNCTION spx_init() RETURNS cstring
+-- AS 'spx.so' LANGUAGE c;
+
+/* NOT SAFE!  Only call if we've already called
+ spx_collate_locale()
+ unsafe_spx_load_schemas()
+ spx_debug_schemas()
+ unsafe_spx_load_schema_path()
+*/
 CREATE OR REPLACE
-FUNCTION spx_init() RETURNS cstring
+FUNCTION unsafe_spx_initialize() RETURNS cstring
 AS 'spx.so' LANGUAGE c;
 
 CREATE OR REPLACE
-FUNCTION spx_load_schemas() RETURNS integer
+FUNCTION spx_collate_locale() RETURNS cstring
 AS 'spx.so' LANGUAGE c;
 
 CREATE OR REPLACE
-FUNCTION spx_load_schema_path() RETURNS integer
+FUNCTION unsafe_spx_load_schemas() RETURNS integer
 AS 'spx.so' LANGUAGE c;
 
 CREATE OR REPLACE
-FUNCTION spx_load_types() RETURNS integer
+FUNCTION unsafe_spx_load_schema_path() RETURNS integer
 AS 'spx.so' LANGUAGE c;
 
 CREATE OR REPLACE
-FUNCTION spx_load_procs() RETURNS integer
+FUNCTION unsafe_spx_load_types() RETURNS integer
+AS 'spx.so' LANGUAGE c;
+
+CREATE OR REPLACE
+FUNCTION unsafe_spx_load_procs() RETURNS integer
 AS 'spx.so' LANGUAGE c;
 
 -- ** testing functions
@@ -238,29 +252,26 @@ AS 'spx.so' LANGUAGE c ;
 
 -- Ensure Sql module ready
 CREATE OR REPLACE
-FUNCTION spx_ready() RETURNS void AS $$
-BEGIN
-	PERFORM sql_wicci_ready();
--- Check sufficient elements of the Spx
--- dependency tree that we can be assured that
--- all of its modules have been loaded.
+FUNCTION spx_ready() RETURNS regprocedure[] AS $$
 --  PERFORM require_module('s1_refs.spx-code');
-	PERFORM spx_init();
-	-- PERFORM spx_load_schemas();
-	-- PERFORM spx_load_schema_path();
-	-- PERFORM spx_load_types();
-	-- PERFORM spx_load_procs();
-END
-$$ LANGUAGE plpgsql;
+	SELECT ARRAY[ sql_wicci_ready() ] || ARRAY[
+			'spx_collate_locale()',
+			'unsafe_spx_load_schemas()',	'unsafe_spx_load_schema_path()',
+			'unsafe_spx_load_types()',	'unsafe_spx_load_procs()'
+	]::regprocedure[] FROM
+		spx_collate_locale(),
+		unsafe_spx_load_schemas(), unsafe_spx_load_schema_path(),
+		unsafe_spx_load_types(),	unsafe_spx_load_procs(),
+		unsafe_spx_initialize()
+$$ LANGUAGE sql;
 COMMENT ON FUNCTION spx_ready() IS '
 	Ensure that all modules of the spx schema
 	are present and initialized.
 ';
 
 CREATE OR REPLACE
-FUNCTION ensure_schema_ready() RETURNS regprocedure AS $$
+FUNCTION ensure_schema_ready() RETURNS regprocedure[] AS $$
 	SELECT spx_ready();
-	SELECT 'spx_ready()'::regprocedure
 $$ LANGUAGE sql;
 
 -- * spx-test data

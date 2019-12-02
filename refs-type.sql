@@ -53,9 +53,9 @@ FUNCTION ref_nil_tag() RETURNS ref_tags
 AS 'spx.so' LANGUAGE c IMMUTABLE;
 
 CREATE OR REPLACE
-FUNCTION refs_load_toms() RETURNS integer
+FUNCTION unsafe_refs_load_toms() RETURNS integer
 AS 'spx.so' LANGUAGE c;
-COMMENT ON FUNCTION refs_load_toms() IS
+COMMENT ON FUNCTION unsafe_refs_load_toms() IS
 '(Re)Load all methods from typed_object_methods table,
 returning the count.';
 
@@ -72,9 +72,9 @@ FUNCTION refs_op_tag_to_method(regprocedure, ref_tags)
 IS '4debugging';
 
 CREATE OR REPLACE
-FUNCTION refs_load_tocs() RETURNS integer
+FUNCTION unsafe_refs_load_tocs() RETURNS integer
 AS 'spx.so' LANGUAGE c;
-COMMENT ON FUNCTION refs_load_tocs() IS
+COMMENT ON FUNCTION unsafe_refs_load_tocs() IS
 '(Re)Load all classes from typed_object_classes table,
 returning the count.';
 
@@ -319,15 +319,6 @@ DROP CAST IF EXISTS (refs AS unchecked_refs) CASCADE;
 CREATE CAST (refs AS unchecked_refs) WITHOUT FUNCTION;
 
 -- * Special Refs Construction and Tests
-
-/*
-CREATE OR REPLACE
-FUNCTION unchecked_ref_null() RETURNS unchecked_refs
-AS 'spx.so', 'refs_null' LANGUAGE c IMMUTABLE;
-COMMENT ON FUNCTION unchecked_ref_null() IS
-'Gives us a NULL::unchecked_refs value without calling a
-constructor, and CASTable to any other refs type.';
-*/
 
 -- ++ unchecked_ref_from_tag_id(ref_tags, ref_ids) -> refs
 CREATE OR REPLACE

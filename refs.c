@@ -161,13 +161,14 @@ static TomCachePtr LoadToms(_CALLS_) {
 		" ORDER BY operation_, tag_";
 	enum tom_fields { tag_, operation_, method_ };
 	CALL_LINK();
+	CALL_DEBUG_OUT("==> LoadToms");
 	static SpxPlans plan;
 	SpxPlan0( CALL_ &plan, select );
 	const int num_rows = SpxQueryDB(plan, NULL, MAX_PROCS);
 	int num_ops = 0;
 	SpxProcs last_op = 0;
 	TomCachePtr cache =
-		spx_ref_alloc(sizeof *cache + num_rows * sizeof *cache->tom);
+		spx_obj_alloc(sizeof *cache + num_rows * sizeof *cache->tom);
 	cache->size = num_rows;
 	cache->spx_caches = SpxCurrentCaches();
 	TomPtr p = cache->tom, pp = p;
@@ -192,7 +193,8 @@ static TomCachePtr LoadToms(_CALLS_) {
 		if ( old_tom && !SpxPlanNull(old_tom->plan) )
 			SPX_MOVE_PLAN(p->plan, old_tom->plan);
 	}
-	CallAssert( SPX_REF_IS_END( cache, p ) );
+	Assert_SpxObjPtr_AtEnd( CALL_ cache, p );
+	CALL_DEBUG_OUT("<== LoadToms");
 	return cache;
 }
 
@@ -203,13 +205,13 @@ extern int RefLoadToms(_CALLS_) {
 		for ( TomPtr p = Tom_Cache->tom
 			; p < Tom_Cache->tom + Tom_Cache->size ; p++ )
 			SPX_FREE_PLAN(p->plan);
-	SPX_REF_DECR(Tom_Cache);
-	//	Tom_Cache = SPX_REF_INCR(cache);
+	SPX_OBJ_REF_DECR(Tom_Cache);
+	//	Tom_Cache = SPX_OBJ_REF_INCR(cache);
 	Tom_Cache = cache;
 	return cache->size;
 }
 
-FUNCTION_DEFINE(refs_load_toms) {	// () -> integer (count)
+FUNCTION_DEFINE(unsafe_refs_load_toms) {	// () -> integer (count)
 	CALL_BASE();
 	SpxRequired(_CALL_);
 	SPX_FUNC_NUM_ARGS_IS(0);
@@ -611,6 +613,7 @@ FUNCTION_DEFINE(refs_debug_tocs_by_type) {
 
 static TocCachePtr LoadTocs(_CALLS_) {
 	CALL_LINK();
+	CALL_DEBUG_OUT("==> LoadTocs");
 	static char select[] =
 		"SELECT DISTINCT tag_, class_, type_, out_, in_, numops_, maxtag_"
 		" FROM s1_refs.tag_class_type_out_in_numops_maxtag_view"
@@ -639,7 +642,7 @@ static TocCachePtr LoadTocs(_CALLS_) {
 	// make room for the results
 	// how might this go wrong if size != max_tag + 1 ???
 	TocCachePtr cache =
-		spx_ref_alloc( toc_cache_end(&toc) - (char *) &toc );
+		spx_obj_alloc( toc_cache_end(&toc) - (char *) &toc );
 	CallAssert(cache);
 	cache->size = toc.size;
 	cache->max_tag = toc.max_tag;
@@ -662,14 +665,14 @@ static TocCachePtr LoadTocs(_CALLS_) {
 	by_type = (TocPtr*) const_by_type;
 	by_class = (TocPtr*) const_by_class;
 	
-	CallAssert( SPX_REF_IS_END( cache, toc_cache_by_class_type_end(cache) ) );
+	Assert_SpxObjPtr_AtEnd( CALL_ cache, toc_cache_by_class_type_end(cache) );
 	for (int row = 0; row < toc.size; row++) {  // load rows
 		const int tag = RowColInt32(CALL_ row, tag_, Ref_Tags_Type, 0);
 		CallAssert(tag >= 0 && tag <= toc.max_tag);
-		CallAssert(spx_ref_in(cache, by_type));
-		CallAssert(spx_ref_in(cache, by_class));
+		Assert_SpxObjPtr_In(CALL_ cache, by_type);
+		Assert_SpxObjPtr_In(CALL_ cache, by_class);
 		const TocPtr toc = *by_class++ = *by_type++ = &cache->toc[tag];
-		CallAssert(spx_ref_in(cache, toc));
+		Assert_SpxObjPtr_In(CALL_ cache, toc);
 		toc->tag = tag;
 		// CALL_DEBUG_OUT("row %d toc tag %d", row, toc->tag);
 		toc->table = RowColOid(CALL_ row, class_, Class_Type, 0);
@@ -686,7 +689,7 @@ static TocCachePtr LoadTocs(_CALLS_) {
 		toc->in = no_in_proc ? 0 : SpxProcByOid(CALL_ in_proc);
 		toc->num_ops = RowColInt32(CALL_ row, numops_, Int32_Type, 0);
 	}
-	CallAssert( SPX_REF_IS_END( cache, by_class ) );
+	Assert_SpxObjPtr_AtEnd( CALL_ cache, by_class );
 	qsort(
 		toc_cache_by_type_tag_start(cache),			cache->size,
 		sizeof *toc_cache_by_type_tag_start(cache),	cmp_tocs_by_type_tag
@@ -695,19 +698,20 @@ static TocCachePtr LoadTocs(_CALLS_) {
 		toc_cache_by_class_type_start(cache),		cache->size,
 		sizeof *toc_cache_by_class_type_start(cache),	cmp_tocs_by_class_type
 	);
+	CALL_DEBUG_OUT("<== LoadTocs");
 	return cache;
 }
 
 extern int RefLoadTocs(_CALLS_) {
 	CALLS_LINK();
 	const TocCachePtr cache = LoadTocs(_CALL_);
-	SPX_REF_DECR(Toc_Cache);
-	//	Toc_Cache = SPX_REF_INCR(cache);
+	SPX_OBJ_REF_DECR(Toc_Cache);
+	//	Toc_Cache = SPX_OBJ_REF_INCR(cache);
 	Toc_Cache = cache;
 	return cache->size;
 }
 
-FUNCTION_DEFINE(refs_load_tocs) {	// () -> integer (count)
+FUNCTION_DEFINE(unsafe_refs_load_tocs) {	// () -> integer (count)
 	CALL_BASE();
 	SpxRequired(_CALL_);
 	SPX_FUNC_NUM_ARGS_IS(0);
@@ -889,6 +893,7 @@ FUNCTION_DEFINE(ref_crefs_graft) {
 
 /* ** tags */
 
+#if 0
 FUNCTION_DEFINE(refs_base_init) {
 	CALL_BASE();
 	SpxRequired(_CALL_);
@@ -902,14 +907,20 @@ FUNCTION_DEFINE(refs_base_init) {
 	// CallAssert(refs_module_id); // always true
 	PG_RETURN_CSTRING( NewStr(CALL_ refs_module_id, call_palloc) );
 }
+#endif
+
+/* Unsafe: Only call AFTER you've called
+	 unsafe_refs_load_toms()
+	 unsafe_refs_load_tocs()
+ */
+FUNCTION_DEFINE(unsafe_refs_initialize) {
+	CALL_BASE();
+	SPX_FUNC_NUM_ARGS_IS(0);
+	Initialize();
+	PG_RETURN_CSTRING( NewStr(CALL_ refs_module_id, call_palloc) );
+}
 
 /* * Low level Utility Functions */
-
-// I don't get why this is needed???
-FUNCTION_DEFINE(refs_null) {	// void -> NULL
-	AssertThat(!SpxFuncNargs(fcinfo));
-	PG_RETURN_NULL();
-}
 
 FUNCTION_DEFINE(refs_tag_width) {	// void -> int32
 	AssertThat(!SpxFuncNargs(fcinfo));

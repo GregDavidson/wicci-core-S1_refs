@@ -400,40 +400,54 @@ FUNCTION max_class_tag() RETURNS ref_tags AS $$
 	SELECT MAX(tag_)::ref_tags FROM typed_object_classes
 $$ LANGUAGE sql;
 
+CREATE OR REPLACE VIEW
+tag_class_type_out_in_numops_maxtag_view AS SELECT tag_,
+class_, type_, out_, in_, count_ops_by_tag(tag_)::integer AS
+numops_, max_class_tag() AS maxtag_ FROM
+typed_object_classes WHERE type_ IN (SELECT oid FROM
+pg_type) AND class_ IN (SELECT oid FROM pg_class) AND
+COALESCE( in_ IN (SELECT oid FROM pg_proc), true ) AND
+COALESCE( out_ IN (SELECT oid FROM pg_proc), true ); COMMENT
+ON VIEW tag_class_type_out_in_numops_maxtag_view IS '
+This rather paranoid VIEW is used by FUNCTION
+unsafe_refs_load_tocs in spx.so to load the
+typed_object_classes into a session cache.';
+
+/*
 CREATE OR REPLACE
-VIEW tag_class_type_out_in_numops_maxtag_view AS
-	SELECT tag_, class_, type_, out_, in_,
-	count_ops_by_tag(tag_)::integer AS numops_,
-	max_class_tag() AS maxtag_
-	FROM typed_object_classes
-	WHERE type_ IN (SELECT oid FROM pg_type)
-			AND class_ IN (SELECT oid FROM pg_class)
-			AND COALESCE( in_ IN (SELECT oid FROM pg_proc), true )
-			AND COALESCE( out_ IN (SELECT oid FROM pg_proc), true );
-COMMENT ON VIEW tag_class_type_out_in_numops_maxtag_view IS
-'This rather paranoid VIEW is used by FUNCTION ref_load_tocs in spx.so
-to load the typed_object_classes into a session cache.';
+FUNCTION refs_ready() RETURNS regprocedure[] AS $$
+-- 	PERFORM require_module('s1_refs.refs-code');
+	SELECT spx_ready() || ARRAY[
+		'unsafe_refs_load_toms()',
+		'unsafe_refs_load_tocs()'
+	]::regprocedure[]
+	FROM refs_base_init();
+$$ LANGUAGE sql;
+COMMENT ON FUNCTION refs_ready() IS '
+	Ensure that all modules of the refs schema
+	are present and initialized.
+';
+*/
 
 CREATE OR REPLACE
-FUNCTION refs_ready() RETURNS void AS $$
-BEGIN
-	PERFORM spx_ready();
--- Check sufficient elements of the Spx
--- dependency tree that we can be assured that
--- all of its modules have been loaded.
--- 	PERFORM require_module('s1_refs.refs-code');
-	PERFORM refs_base_init();
-END
-$$ LANGUAGE plpgsql;
+FUNCTION unsafe_refs_initialize() RETURNS cstring
+AS 'spx.so' LANGUAGE c;
+
+CREATE OR REPLACE
+FUNCTION refs_ready() RETURNS regprocedure[] AS $$
+	SELECT spx_ready() || ARRAY[
+		'unsafe_refs_load_toms()',	'unsafe_refs_load_tocs()'
+	]::regprocedure[] FROM
+		unsafe_refs_load_toms(), unsafe_refs_load_tocs(), unsafe_refs_initialize()
+$$ LANGUAGE sql;
 COMMENT ON FUNCTION refs_ready() IS '
 	Ensure that all modules of the refs schema
 	are present and initialized.
 ';
 
 CREATE OR REPLACE
-FUNCTION ensure_schema_ready() RETURNS regprocedure AS $$
+FUNCTION ensure_schema_ready() RETURNS regprocedure[] AS $$
 	SELECT refs_ready();
-	SELECT 'refs_ready()'::regprocedure
 $$ LANGUAGE sql;
 
 -- * typed_object_classes registry support

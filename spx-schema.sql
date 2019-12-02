@@ -33,8 +33,8 @@ SELECT set_file('spx-schema.sql', '$Id');
 	--	s0_lib.spx_schema_names
 	--	s0_lib.our_namespaces
 
--- spx_load_schemas() -- loads schema_view
--- spx_load_schema_path() -- loads schema_path_by_id
+-- unsafe_spx_load_schemas() -- loads schema_view
+-- unsafe_spx_load_schema_path() -- loads schema_path_by_id
 -- schema_clean() -- deletes rows of dropped schemas
 -- drop_schemas(schema_names)
 	-- drops any dependent schemas and the specified one
@@ -44,8 +44,8 @@ SELECT set_file('spx-schema.sql', '$Id');
 	-- that the new tables' contents get loaded!!
 
 -- *** Type & Proc shadowing:
--- spx_load_types() -- loads our_types via type_view
--- spx_load_procs() -- loads our_procs via proc_view
+-- unsafe_spx_load_types() -- loads our_types via type_view
+-- unsafe_spx_load_procs() -- loads our_procs via proc_view
 -- spx_clean -- deletes rows of dropped objects
 
 -- ** Refs tables & functions:

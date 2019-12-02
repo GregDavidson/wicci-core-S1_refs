@@ -41,7 +41,6 @@ typedef const struct typed_object_method {
 typedef const struct tom_cache *RefTomCache;
 // variable-sized structure
 struct tom_cache {
-	//	struct spx_ref_count ref_count;	// must be 1st field!!
 	struct spx_caches spx_caches;
 	int size;
 	struct typed_object_method tom[0];
@@ -70,8 +69,9 @@ Datum CallMethod(
 	CALLS_ Toms tom, Datum args[], bool *null_ret
 );
 
-FUNCTION_DECLARE(refs_base_init);	 // void -> cstring
-FUNCTION_DECLARE(refs_load_toms); // void --> INT32
+// FUNCTION_DECLARE(refs_base_init);	 // void -> cstring
+FUNCTION_DECLARE(unsafe_refs_initialize);	 // void -> cstring
+FUNCTION_DECLARE(unsafe_refs_load_toms); // void --> INT32
 FUNCTION_DECLARE(refs_debug_toms); // void --> INT32
 FUNCTION_DECLARE(ref_op_tag_to_method);  // regprocedure, ref_tags -> regprocedure?
 
@@ -133,8 +133,6 @@ enum crefs_tags {
  */
 
 /* **  Low level Utility Functions: */
-
-FUNCTION_DECLARE(refs_null);	// void ->  NULL
 
 FUNCTION_DECLARE(refs_tag_width);	// void ->  integer
 
@@ -414,7 +412,6 @@ typedef const struct typed_object_class {
 typedef const struct toc_cache *RefTocCache;
 // variable-sized structure
 struct toc_cache {
-	//	struct spx_ref_count ref_count;	// must be 1st field!!
 	struct spx_caches spx_caches;
 	RefTomCache tom_cache;
 	int size;
@@ -462,7 +459,7 @@ static inline char *toc_cache_end(RefTocCache cache) {
 	return (char *) toc_cache_by_class_type_end(cache);
 }
 
-FUNCTION_DECLARE(refs_load_tocs);	// void -> tocs count INT32
+FUNCTION_DECLARE(unsafe_refs_load_tocs);	// void -> tocs count INT32
 FUNCTION_DECLARE(refs_table_type_to_tag); // regclass, regtype -> ref_tags
 FUNCTION_DECLARE(refs_tag_to_type);				// tag_arg --> reftype OID
 FUNCTION_DECLARE(refs_type_to_tag);				// reftype --> tag_arg INT32

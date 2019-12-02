@@ -39,7 +39,7 @@ PG_MODULE_MAGIC;
 	 for Cached Data that might need to be updated even though
 	 a transaction was still using it.  Given that this Cached
 	 Data is local to a Database Connection, it may not really
-	 be needed.  I've moved the mechanism for tracking the use
+	 be needed.  I've refactored the mechanism for tracking the use
 	 of these caches to be less obtrusive (it's tucked under
 	 the allocated objects) and I'm disabling the automatic
 	 freeing of this memory when the reference count goes to 0.
@@ -61,56 +61,62 @@ PG_MODULE_MAGIC;
 
 // objects that are not current but can't yet be freed go on TheWheel
 // was static - maybe can be again??  Otherwise s/The/SpxObj/ !!!
-struct spx_ref_count TheWheel = {1, &TheWheel, &TheWheel};
+struct spx_obj_header TheWheel = {1, &TheWheel, &TheWheel};
 
-// Attach the given object to TheWheel
-// We're now attaching objects at allocation time.
-// Does this mean this code is now obsolete?
-static inline void SpxAttach(CALLS_ SpxObjPtr p) {
-	CALLS_LINK();
-#if 0
-	CallAssert(p && !p->next && !p->prev);
-	p->next = TheWheel.next;
-	p->prev = &TheWheel;
-	TheWheel.next = TheWheel.next->prev = p;
-#endif
+/* Allocate and return fresh storage of given size above
+	 a header of type struct spx_obj_header linked to TheWheel
+ */
+void *spx_obj_alloc(size_t size) {
+	// allocate storage for object on top of header
+	SpxObjHdr header = calloc(size + sizeof *header, 1);
+	// indicate object in use by 1 client
+	header->count = 1;
+	// attach new storage to TheWheel
+	header->next = TheWheel.next;
+	header->prev = &TheWheel;
+	TheWheel.next = TheWheel.next->prev = header;
+	// record how far object actually extends
+	header->end_ptr = (char *) header + sizeof *header + size;
+	// mark object as part of TheWheel to distinguish from any
+	// other pointers
+	header->the_wheel = &TheWheel;
+	// return pointer to object to our client who is
+	// blissfully unaware of header lurking just below it!
+	return header->object;
 }
 
-// Detach the given object from TheWheel
-static inline void SpxDetach(CALLS_ SpxObjPtr p) {
-	CALLS_LINK();
-	CallAssert(p && p->next && p->prev);
-	CALL_WARN_OUT("Declining to Detach!");
-#if 0
-	p->prev->next = p->next;
-	p->next->prev = p->prev;
-	p->prev = p->next = 0;
-#endif
-}
-
-// free p or add it to TheWheel
-extern void SpxTryFreeOne(CALLS_ SpxObjPtr p) {
-	CALL_LINK();
-	if (p == 0) return;
+// free object if reference count is now zero
+// NOTE: We're currently not actually freeing anything!!
+extern void SpxTryFreeOne(CALLS_ SpxObjHdr p) {
+	CALL_BASE();
+	if (p == 0) {
+		CALL_WARN_OUT("Null Object!");
+		return;
+	}
 	CallAssert(p->count >= 0);
-	CALL_WARN_OUT("Declining to Manage %p", p);
-#if 0
+	CallAssert(p->the_wheel == &TheWheel);
 	if ( p->count == 0 ) {
-		if (p->next) SpxDetach(CALL_ p);
+#if 1
+		CALL_WARN_OUT("Declining to deallocate %p", p);
+#else
+		// Detach the Heap Object from TheWheel
+		p->prev->next = p->next;
+		p->next->prev = p->prev;
+		p->prev = p->next = 0;
+		// free the storage
 		free(p);
-	} else
-		if (!p->next) SpxAttach(CALL_ p);
 #endif
+	}
 }
 
 // free any objects on TheWheel that are no longer in use
 // When do we imagine we might need this??
 extern void SpxTryFreeSome(_CALLS_) {
-	CALL_LINK();
-	// SpxObjPtr p, next;
+	CALL_BASE();
+	// SpxObjHdr p, next;
 	CALL_WARN_OUT("Declining to FreeSome");
 	#if 0
-	for (SpxObjPtr next, p = TheWheel.next; p != &TheWheel; p = next) {
+	for (SpxObjHdr next, p = TheWheel.next; p != &TheWheel; p = next) {
 		next = p->next;
 		SpxTryFreeOne(CALL_ p);
 	}
@@ -136,7 +142,7 @@ int SpxFuncArgs(PG_FUNCTION_ARGS, Datum arg[], char is_null[]) {
 extern bool SpxCheckArgNonNull(
 	CALLS_ PG_FUNCTION_ARGS, enum spx_check_levels level, int arg
 ) {
-	CALLS_LINK();
+	CALL_BASE();
 	if ( SpxFuncArgNull(fcinfo, arg) )
 		switch (level) {
 		case spx_check_error: CALL_BUG_OUT("arg %d null", arg);
@@ -151,7 +157,7 @@ extern bool SpxCheckArgCount(
 	CALLS_ PG_FUNCTION_ARGS, enum spx_check_levels level,
 	int min, int max	// max = -1 if none
 ) {
-	CALLS_LINK();
+	CALL_BASE();
 	const int num = SpxFuncNargs(fcinfo);
 	if ( ( min != spx_check_none && num < min )
 		|| ( max != spx_check_none && num > max ) )
@@ -188,7 +194,7 @@ extern bool SpxCheckArgTypeOid(
 	CALLS_ PG_FUNCTION_ARGS, enum spx_check_levels level,
 	int arg, SpxTypeOids expected, int *num_unknown
 ) {
-	CALLS_LINK();
+	CALL_BASE();
 	const Oid actual = SpxFuncArgType(fcinfo, arg);
 	if ( actual == InvalidOid ) {
 		if (num_unknown) ++*num_unknown;
@@ -216,7 +222,7 @@ extern int SpxCheckArgsRegtypesMinMax(
 	CALLS_ PG_FUNCTION_ARGS, enum spx_check_levels level,
 	const Oid* types, const int num_types, int min, int max
 ) {
-	CALLS_LINK();
+	CALL_BASE();
 	if ( !SpxCheckArgCount(CALL_ fcinfo, level, min, max) )
 		return 0;
 	const int num_args = SpxFuncNargs(fcinfo);
@@ -234,7 +240,7 @@ extern int SpxCheckArgsMinMax(
 	CALLS_ PG_FUNCTION_ARGS, enum spx_check_levels level,
 	int min, int max, SpxTypeOids arg_type, ...
 ) {
-	CALLS_LINK();
+	CALL_BASE();
 	if ( !SpxCheckArgCount(CALL_ fcinfo, level, min, max) )
 		return 0;
 	int arg = 0, unknown = 0;
@@ -254,7 +260,7 @@ extern int SpxCheckArgs(
 	CALLS_ PG_FUNCTION_ARGS, enum spx_check_levels level,
 	SpxTypeOids arg_type, ...
 ) {
-	CALLS_LINK();
+	CALL_BASE();
 	int arg = 0, unknown = 0;
 	va_list typeargs;
 	va_start(typeargs, arg_type);
@@ -365,7 +371,7 @@ const SpxTypeOids
  */
 
 extern void SpxRequireTypes(CALLS_ SpxTypeOids *types, bool reinit) {
-	CALLS_LINK();
+	CALL_BASE();
 	for ( ; types; types = types->required )
 		if ( reinit || !types->type_oid ) {
 			const SpxTypes ourtype = SpxTypeByName(CALL_ types->type_name);
@@ -448,8 +454,8 @@ static size_t AddSchemaNameDelim(
 			CallAssert( **dst == '\0' );
 		} else {
 			CALL_WARN_OUT(
-	 C_SIZE_FMT(len) C_SIZE_FMT(*size),
-	 C_SIZE_VAL(len), C_SIZE_VAL(*size)
+					C_SIZE_FMT(len) C_SIZE_FMT(*size),
+					C_SIZE_VAL(len), C_SIZE_VAL(*size)
 			);
 			*dst = 0;
 		}
@@ -532,30 +538,6 @@ static TypePtrs spx_type_end(CALLS_ TypePtrs p, int name_size) {
 	return (TypePtrs) ( (char *) (p+1) + name_size );
 }
 
-/* The last fixed-size field in a schema cache is by_oid[size]
- * followed immedately by the variable-length schema structures. */
-static inline Schemas schema_cache_schemas(SpxSchemaCache cache) {
-	return (Schemas) (spx_schema_cache_by_oid(cache) + cache->size);
-}
-
-/* Assumes that the last field in a schema is its name and that
-	 the name_size is the size of that field, including alignment padding. */
-static Schemas spx_schema_end(
-	CALLS_ Schemas schema, int name_size
-) {
-	CALL_LINK();
-	CallAssert( name_size % sizeof (int) == 0 );
-	const int len = strlen( schema->name ) + 1;
-	CallAssert( len <= name_size );
-	CallAssert( spx_aligned_size(len) == name_size );
-	if ( DebugLevel() > 1 )
-		CALL_DEBUG_OUT("passed %s", schema->name );
-	CallAssert(
-	schema->name + name_size == (char *) (schema+1) + name_size
-	);
-	return (Schemas) (schema->name + name_size);
-}
-	
 SpxSchemaCache Spx_Schema_Cache;
 typedef struct spx_schema_cache *SchemaCachePtr;
 SpxSchemaPath Spx_Schema_Path;
@@ -599,16 +581,17 @@ static inline void SchemaPathCheck(_CALLS_) {
 
 static SpxSchemaPath LoadSchemaPath(_CALLS_) {
 	CALL_LINK();
+	CALL_DEBUG_OUT("==> LoadSchemaPath");
 	static SpxPlans plan;
 	SpxPlan0( CALL_ &plan,
 		"SELECT DISTINCT "
-	" id_, name_, oid_ "
+	" id, schema_name, schema_oid "
 		" FROM s0_lib.schema_path_by_id "
 	);
 	enum {id_, name_, oid_ };
 	const int num_rows = SpxQueryDB(plan, NULL, MAX_SCHEMAS);
 	const SchemaPathPtr sp =
-		spx_ref_alloc( sizeof *sp + num_rows*sizeof *sp->path);
+		spx_obj_alloc( sizeof *sp + num_rows * sizeof *sp->path);
 	sp->size = num_rows;
 	sp->schema_cache = Spx_Schema_Cache;
 	CallAssert(num_rows <= sp->schema_cache->size);
@@ -627,36 +610,43 @@ static SpxSchemaPath LoadSchemaPath(_CALLS_) {
 		CALL_DEBUG_OUT("row %d schema id %d oid %d", row, id, s->oid);
 		*path_ptr++ = s;
 	}
-	CallAssert( spx_ref_is_end( sp, path_ptr ) );
+	Assert_SpxObjPtr_AtEnd(CALL_ sp, path_ptr );
+	CALL_DEBUG_OUT("<== LoadSchemaPath");
 	return sp;
 }
 
 extern int SpxLoadSchemaPath(_CALLS_) {
-	CALLS_LINK();
+	CALL_BASE();
 	const SpxSchemaPath p = LoadSchemaPath(_CALL_);
-	SPX_REF_DECR(Spx_Schema_Path);
-	//	Spx_Schema_Path = SPX_REF_INCR(p);
+	SPX_OBJ_REF_DECR(Spx_Schema_Path);
 	Spx_Schema_Path = p;
 	return p->size;
 }
 
 static SpxSchemaCache LoadSchemas(_CALLS_) {
-	enum schema_fields {
-		id_, name_, oid_, name_size_, min_id_, max_id_, sum_text_
-	};
-	static const char select_schemas[] = "SELECT DISTINCT "
-	" id_, name_, oid_, name_size_, min_id_, max_id_, sum_text_ "
-	" FROM s0_lib.schema_view" " ORDER BY name_";
-	CALL_LINK();
+	enum schema_fields {	id_, name_, oid_, name_len_ };
+	static const char select_schemas[] = "SELECT DISTINCT"
+		" id, schema_name, schema_oid, schema_name_len"
+		" FROM s0_lib.schema_view"
+		" ORDER BY schema_name";
+	CALL_BASE();
+	CALL_DEBUG_OUT("==> LoadSchemas");
 	static SpxPlans plan;
 	SpxPlan0( CALL_ &plan, select_schemas);
 	const int num_rows = SpxQueryDB(plan, NULL, MAX_SCHEMAS);
-	const int min_id = RowColInt32(CALL_ 0, min_id_, Int32_Type, NULL);
-	CallAssert(min_id >= 0);
-	const int max_id = RowColInt32(CALL_ 0, max_id_, Int32_Type, NULL);
+	int min_id = RowColInt32(CALL_ 0, id_, Int32_Type, NULL);
+	int max_id = 0;
+	size_t sum_text = 0;
+	int row;
+	for (row = 0; row < num_rows; row++) {
+		const int id =  RowColInt32(CALL_ 0, id_, Int32_Type, NULL);
+		const int name_len = RowColInt32(CALL_ 0, name_len_, Int32_Type, NULL);
+		if (id < min_id) min_id = id;
+		if (id > max_id) max_id = id;
+		sum_text += spx_aligned_size(name_len+1);
+	}
 	const int by_id_len = max_id + 1;
-	const int64 sum_text=RowColInt64(CALL_ 0, sum_text_, Int64_Type, NULL);
-	const SchemaCachePtr cache = spx_ref_alloc(
+	const SchemaCachePtr cache = spx_obj_alloc(
 	sizeof *cache
 	+ by_id_len * sizeof *cache->by_id
 	+ num_rows * sizeof spx_schema_cache_by_name(cache)
@@ -670,37 +660,60 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 	cache->size = num_rows;
 	SchemaPtrs name_p = (SchemaPtrs) spx_schema_cache_by_name(cache);
 	SchemaPtrs oid_p = (SchemaPtrs) spx_schema_cache_by_oid(cache);
-	Schemas p = schema_cache_schemas(cache);
-	int row;
+	Schemas p = (Schemas) spx_schema_cache_schemas(cache);
+	size_t sum_text_too = 0;
 	for (row = 0; row < num_rows; row++) {
 		p->id = RowColInt32(CALL_ row, id_, Int32_Type, NULL);
 		CallAssertMsg( p->id >= 0 && p->id <= max_id,
 			"row %d bad schema id %d", row, p->id );
 		p->oid = RowColOid(CALL_ row, oid_, Oid_Type, 0);
-		// Tmp -> Session Yes???
-		const TmpStrPtr s = RowColStr(CALL_ row, name_, SessionAlloc);
-		strcpy(p->name, s);
-		const int name_size = RowColInt32(
-	CALL_ row, name_size_, Int32_Type, NULL
-		);
+		const int name_len = RowColInt32(CALL_ 0, name_len_, Int32_Type, NULL);
+		sum_text_too += spx_aligned_size(name_len+1);
+		/* Method one: Get the name as a text dataum and copy it
+			 into place with */
+		//	 void text_to_cstring_buffer(const text *src, char *dst, size_t dst_len)
+		// see backend/utils/adt/varlena.c for details
+		// This avoids extra allocations and copying!!
+		// We're NOT using our SPX api though!!
+		{
+			bool is_null;
+			const Datum name_datum = SPI_getbinval(
+																						 SPI_tuptable->vals[row],
+																						 SPI_tuptable->tupdesc, name_,
+																						 &is_null );
+			text *const name_text = DatumGetTextPP(name_datum);
+			text_to_cstring_buffer(name_text, p->name, name_len+1);
+		}
+		// Verify with method two, using SPI_getvalue (underlyingly):
+		{
+			char *s = RowColStrPtr(CALL_ row, name_);
+			if ( !strcmp(p->name, s) )
+				CALL_WARN_OUT("name %s != %s", p->name, s);
+			const int name_len_too = strlen(s);
+			if ( name_len != name_len_too )
+				CALL_WARN_OUT("name_len %d != %d", name_len, name_len_too);
+			pfree(s);
+		}
 		cache->by_id[p->id] = *name_p++ =  *oid_p++ = p;
-		p = spx_schema_end(CALL_ p, name_size);
-		CallAssert( p->id < max_id || spx_ref_is_end( cache, p) );
+		p = spx_schema_next(p);
+		if ( p->id >= max_id )
+			Assert_SpxObjPtr_AtEnd(CALL_ cache, p);
 	}
-	// qsort(	spx_schema_cache_by_name(cache),		cache->size,
-	//  		sizeof (SpxSchemas),	cmp_schemas_by_name	);
-	CALL_DEBUG_OUT("About to qsort the Schema Cache");
+	if ( sum_text != sum_text_too )
+		CALL_WARN_OUT("sum_text %zu != %zu", sum_text, sum_text_too);
+	CALL_DEBUG_OUT("About to qsort the Schema Cache by_oid");
 	qsort(	spx_schema_cache_by_oid(cache),		cache->size,
-		sizeof (SpxSchemas),	cmp_schemas_by_oid	 );
+					sizeof (SpxSchemas),	cmp_schemas_by_oid	 );
+	CALL_DEBUG_OUT("<== LoadSchemas");
 	return cache;
 }
 
 extern int SpxLoadSchemas(_CALLS_) {
-	CALLS_LINK();
+	CALL_BASE();
 	CALL_DEBUG_OUT("Before LoadSchemas");
 	const SpxSchemaCache cache = LoadSchemas(_CALL_);
-	SPX_REF_DECR(Spx_Schema_Cache);
-	//	Spx_Schema_Cache = SPX_REF_INCR(cache);
+	SPX_OBJ_REF_DECR(Spx_Schema_Cache);
+	//	Spx_Schema_Cache = SPX_OBJ_REF_INCR(cache);
 	Spx_Schema_Cache = cache;
 	return cache->size;
 }
@@ -758,7 +771,7 @@ extern SpxSchemas SpxSchemaByName(CALLS_ StrPtr name) {
 	return SchemaByName(CALL_ name, Spx_Schema_Cache);
 }
 
-FUNCTION_DEFINE(spx_load_schemas) {
+FUNCTION_DEFINE(unsafe_spx_load_schemas) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(0);
 	const int level = StartSPX(_CALL_);
@@ -767,7 +780,7 @@ FUNCTION_DEFINE(spx_load_schemas) {
 	PG_RETURN_INT32(num_schemas);
 }
 
-FUNCTION_DEFINE(spx_load_schema_path) {
+FUNCTION_DEFINE(unsafe_spx_load_schema_path) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(0);
 	const int level = StartSPX(_CALL_);
@@ -836,6 +849,7 @@ static inline void TypeCacheCheck(_CALLS_) {
 
 static SpxTypeCache LoadTypes(_CALLS_) {
  CALL_LINK();
+	CALL_DEBUG_OUT("==> LoadTypes");
 	static SpxPlans plan;
 	SpxPlan0(CALL_ &plan, "SELECT DISTINCT "
 		"oid_, name_, schema_id_, typlen_, typbyval_, name_size_, sum_text_"
@@ -849,7 +863,7 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 	// CALL_DEBUG_OUT("sum_text %ld", sum_text);
 	int64 name_size_sum = 0;
 	TypePtrs p;
-	const TypeCachePtr cache = spx_ref_alloc(
+	const TypeCachePtr cache = spx_obj_alloc(
 		sizeof *cache + num_rows * (
 	sizeof *cache->by_name
 	+ sizeof *spx_type_cache_by_oid(cache)
@@ -885,21 +899,22 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 		*by_name++ =  *by_oid++ = p;
 		p = spx_type_end( CALL_ p, name_size );
 	}
-	CallAssert( spx_ref_is_end( cache, p ) );
+	Assert_SpxObjPtr_AtEnd( CALL_ cache, p );
 	CallAssert(name_size_sum == sum_text);
 	// qsort(	cache->by_name, 		cache->size,
 	//		sizeof *cache->by_name,	cmp_types_by_name );
 	CALL_DEBUG_OUT("about to qsort %d rows by oid", num_rows);
 	qsort(	spx_type_cache_by_oid(cache),		cache->size,
 		sizeof *spx_type_cache_by_oid(cache),	cmp_types_by_oid);
+	CALL_DEBUG_OUT("<== LoadTypes");
 	return cache;
 }
 
 extern int SpxLoadTypes(_CALLS_) {
-	CALLS_LINK();
+	CALL_BASE();
 	const SpxTypeCache cache = LoadTypes(_CALL_);
-	SPX_REF_DECR(Spx_Type_Cache);
-	//	Spx_Type_Cache = SPX_REF_INCR(cache);
+	SPX_OBJ_REF_DECR(Spx_Type_Cache);
+	//	Spx_Type_Cache = SPX_OBJ_REF_INCR(cache);
 	Spx_Type_Cache = cache;
 	return cache->size;
 }
@@ -934,7 +949,7 @@ extern SpxTypes SpxTypeByName(CALLS_ StrPtr name) {
 	return TypeByName(CALL_ name, Spx_Type_Cache);
 }
 
-FUNCTION_DEFINE(spx_load_types) {
+FUNCTION_DEFINE(unsafe_spx_load_types) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(0);
 	const int level = StartSPX(_CALL_);
@@ -1051,7 +1066,7 @@ extern size_t SpxCallStr(
 	CALLS_ char *dst, size_t size, SpxProcs p,
 	SpxTypeOids ret_type, const Oid arg_types[], int num_args
 ) {
-	CALLS_LINK();
+	CALL_BASE();
 	CallAssert(num_args >= p->min_args);
 	CallAssert(num_args <= p->max_args);
 	size_t accum = 0;
@@ -1196,6 +1211,7 @@ extern void SpxCheckCaches(CALLS_ SpxCaches caches) {
 
 static SpxProcCache LoadProcs(_CALLS_) {
 	CALL_LINK();
+	CALL_DEBUG_OUT("==> LoadProcs");
 	static SpxPlans plan;
 	SpxPlan0(	CALL_ &plan, "SELECT DISTINCT"
 			" oid_, name_, schema_id, rettype_,"
@@ -1211,7 +1227,7 @@ static SpxProcCache LoadProcs(_CALLS_) {
 	const int sum_nargs=RowColInt64(CALL_ 0, sum_nargs_, Int64_Type, 0);
 	int name_size_accum = 0, max_args_accum = 0;
 	ProcPtrs p;
-	const ProcCachePtr cache = spx_ref_alloc(
+	const ProcCachePtr cache = spx_obj_alloc(
 	sizeof *cache
 	+ num_rows * ( 2 * sizeof *cache->by_name + sizeof *p )
 	+ sum_nargs * (sizeof *p->arg_type_oids + sizeof (SpxTypes *) )
@@ -1248,13 +1264,14 @@ static SpxProcCache LoadProcs(_CALLS_) {
 		*by_name++ =  *by_oid++ = p;
 		p = spx_proc_end(CALL_ p, name_size); // includes checking & debugging
 	}
-	CallAssertMsg( spx_ref_is_end(cache, p),
-	C_PTRDIFF_FMT__ ";"
-	FMT_lf(max_args_accum,"%d") FMT_lf(sum_nargs,"%d")  ";"
-	FMT_lf(name_size_accum,"%d") FMT_lf(sum_text,"%d"),
-	C_PTRDIFF2_VAL(spx_obj_hdr(cache)->end_ptr, p),
-	max_args_accum, sum_nargs,
-	name_size_accum, sum_text
+	CallAssertMsg(
+								SpxObjPtr_AtEnd(CALL_ cache, p),
+								C_PTRDIFF_FMT__ ";"
+								FMT_lf(max_args_accum,"%d") FMT_lf(sum_nargs,"%d")  ";"
+								FMT_lf(name_size_accum,"%d") FMT_lf(sum_text,"%d"),
+								C_PTRDIFF2_VAL(spx_obj_end(CALL_ cache), p),
+								max_args_accum, sum_nargs,
+								name_size_accum, sum_text
 	);
 	CallAssertMsg( max_args_accum == sum_nargs,
 	FMT_lf(max_args_accum,"%d") FMT_lf(sum_nargs,"%d"),
@@ -1267,14 +1284,15 @@ static SpxProcCache LoadProcs(_CALLS_) {
 	qsort(	spx_proc_cache_by_oid(cache),	cache->size,
 		sizeof (SpxProcs),		cmp_procs_by_oid );
 	//  DebugSetLevel(prior_debug_level);
+	CALL_DEBUG_OUT("<== LoadProcs");
 	return cache;
 }
 
 extern int SpxLoadProcs(_CALLS_) {
-	CALLS_LINK();
+	CALL_BASE();
 	const SpxProcCache cache = LoadProcs(_CALL_);
-	SPX_REF_DECR(Spx_Proc_Cache);
-	//	Spx_Proc_Cache = SPX_REF_INCR(cache);
+	SPX_OBJ_REF_DECR(Spx_Proc_Cache);
+	//	Spx_Proc_Cache = SPX_OBJ_REF_INCR(cache);
 	Spx_Proc_Cache = cache;
 	return cache->size;
 }
@@ -1309,7 +1327,7 @@ extern SpxProcs SpxProcByName(CALLS_ StrPtr name) {
 	return ProcByName(CALL_ name, Spx_Proc_Cache);
 }
 
-FUNCTION_DEFINE(spx_load_procs) {
+FUNCTION_DEFINE(unsafe_spx_load_procs) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(0);
 	const int level = StartSPX(_CALL_);
@@ -1329,7 +1347,7 @@ extern struct spx_caches SpxCurrentCaches(void) {
 
 // @pre( InSPX(_CALL_) )
 extern void SpxInitSPX(_CALLS_) {
-	CALLS_LINK();
+	CALL_BASE();
 	CALL_DEBUG_OUT("+");
 	SpxLoadSchemas(_CALL_);
 	SpxLoadSchemaPath(_CALL_);
@@ -1340,19 +1358,37 @@ extern void SpxInitSPX(_CALLS_) {
 
 // @pre( ! InSPX(_CALL_) at this level )
 extern void SpxInit(_CALLS_) {
-	CALLS_LINK();
+	CALL_BASE();
 	CALL_DEBUG_OUT("+StartSPX(_CALL_);");
 	const int level = StartSPX(_CALL_);
 	SpxInitSPX(_CALL_);
 	FinishSPX(CALL_ level);
 }
 
+#if 0
 FUNCTION_DEFINE(spx_init) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(0);
 	SpxInit(_CALL_);
 	Initialize();
 	// CallAssert(spx_version); // always true
+	PG_RETURN_CSTRING( NewStr(CALL_ spx_version, call_palloc) );
+}
+#endif
+
+/* Only call this AFTER ensuring that all
+ spx initializations have been done, i.e.
+* spx_collate_locale()
+* unsafe_spx_load_schemas()
+* spx_debug_schemas()
+* unsafe_spx_load_schema_path()
+*/
+FUNCTION_DEFINE(unsafe_spx_initialize) {
+	CALL_BASE();
+	SPX_FUNC_NUM_ARGS_IS(0);
+	Initialize();
+	// CallAssert(spx_version); // always true
+	Initialize();
 	PG_RETURN_CSTRING( NewStr(CALL_ spx_version, call_palloc) );
 }
 
@@ -1653,8 +1689,6 @@ extern void SpxPlanNvargs(
 	}
 }
 
-// SPI_push and SPI_pop are now no-ops
-// use new push and pop ???
 static StrPtr StrValueSPX(
 	CALLS_ HeapTuple row, TupleDesc rowdesc, const int col
 ) {
@@ -1815,11 +1849,12 @@ extern StrPtr RowColStr(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
 	CALLS_LINK();
 	CallAssert(alloc);
 	const StrPtr s = RowColStrPtr(CALL_ row, col);
-	return NewStr( CALL_ s, alloc );
+	return alloc ? NewStr( CALL_ s, alloc ) : s;
 }
 
+// This seems to be quite a mess!!  We're not even using alloc!!
 extern SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
-	CALLS_LINK();
+	CALL_BASE();
 	const StrPtr s = RowColStrPtr(CALL_  row, col);
 	WARN_OUT("%s: row %d, col %d, value %s", __func__, row, col, s ?: "NULL");
 	// cstring_to_text is NOT NULL-ptr safe!
@@ -2119,7 +2154,7 @@ SpxQueryStr(CALLS_ SpxPlans plan, Datum args[], ALLOCATOR_PTR(alloc)) {
 
 // join call graph into call context string 
 static TmpStrPtr JoinCallAccum(CALLS_ size_t accum) {
-	CALLS_LINK();
+	CALL_BASE();
 	char *result;
 	static const char separator[] = ".";
 	static const size_t sep_len = sizeof separator - 1;
@@ -2213,7 +2248,7 @@ StrPtr NewStr( CALLS_ Str old, ALLOCATOR_PTR(alloc) ) {
 
 #if 0
 extern SpxText SpxStrText( CALLS_ StrPtr str, ALLOCATOR_PTR(alloc) ) {
-	CALLS_LINK();
+	CALL_BASE();
 	if (str == NULL)
 		return Spx_Null_Text;
 	const size_t str_len = strlen(str);
@@ -2247,7 +2282,7 @@ StrPtr StrCat(CALLS_ ALLOCATOR_PTR(alloc), const StrPtr s0, ...) {
 	StrPtr s;
 	char *buf;
 	size_t len = 0;
-	CALLS_LINK();
+	CALL_BASE();
 
 	va_start(args, s0);
 	for (s = s0; s; s = va_arg(args, StrPtr))
@@ -2269,7 +2304,7 @@ StrPtr StrCatSlices(CALLS_ ALLOCATOR_PTR(alloc), const StrPtr start0, const StrP
 	va_list args;
 	StrPtr start, end;
 	size_t len = 0;
-	CALLS_LINK();
+	CALL_BASE();
 
 	va_start(args, end0);
 	for ( start = start0, end = end0
