@@ -2,15 +2,15 @@
 \ir settings.sql
 SELECT set_file('refs-test.sql', '$Id');
 
-SELECT spx_debug_on();
-SELECT spx_debug_set(2);
-SELECT refs_debug_on();
+-- SELECT spx_debug_on();
+-- SELECT spx_debug_set(2);
+-- SELECT refs_debug_on();
 
-TABLE tag_class_type_out_in_numops_maxtag_view;
-TABLE typed_object_classes;
-TABLE typed_object_methods;
-TABLE operations_fallbacks;
-TABLE fancy_classes;
+-- TABLE tag_class_type_out_in_numops_maxtag_view;
+-- TABLE typed_object_classes;
+-- TABLE typed_object_methods;
+-- TABLE operations_fallbacks;
+-- TABLE fancy_classes;
 
 SELECT (
 	rettype::regtype::text || ' ' || oid_::regprocedure::text

@@ -28,7 +28,7 @@ extern FILE *debug_log_;
 #define debug_out (debug_log_ ? debug_log_ : stderr)
 
 static inline void debug_log_close(void) {
-	if (debug_log_) fclose(debug_log_);
+	if (debug_log_) { fclose(debug_log_); debug_log_ = 0; }
 }
 
 static inline FILE * debug_log_set(FILE *log) {

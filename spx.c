@@ -1857,8 +1857,8 @@ extern SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
 	CALL_BASE();
 	const StrPtr s = RowColStrPtr(CALL_  row, col);
 	WARN_OUT("%s: row %d, col %d, value %s", __func__, row, col, s ?: "NULL");
-	// cstring_to_text is NOT NULL-ptr safe!
-	text *const tp = cstring_to_text_with_len(s, s ? strlen(s) : 0);
+	text *const tp = CStringToText(CALL_ s, alloc);
+	// if ( DebugLevel() )
 	{ // paranoid testing: !!
 		char *const s2 = text_to_cstring(tp);
 		CallAssert(!strcmp(s ?: "NULL", s2 ?: "NULL"));
@@ -2225,6 +2225,48 @@ char * StrAlloc( CALLS_ size_t size, ALLOCATOR_PTR(alloc) ) {
 	char * s = CheckedAlloc(CALL_ size+1, MaxTextStrLen, alloc);
 	s[size] = '\0';
 	return s;
+}
+
+/*
+	Ideally I'd use the
+cstring_to_text_with_len
+text_to_cstring
+functions from varlena.c
+but they only allocate with palloc.
+I could wrap them and then copy the storage up with ??? what is it?
+Good idea for later to avoid software rot.
+For now, let's hack them to be better!
+ */
+
+
+text *
+CStringToText( CALLS_ UtilStr s, ALLOCATOR_PTR(alloc) ) {
+	CALL_LINK();
+	size_t len = s ? strlen(s) : 0;
+	text *const result = CALL_ALLOC(alloc, len + VARHDRSZ);
+
+	SET_VARSIZE(result, len + VARHDRSZ);
+	memcpy(VARDATA(result), s, len);
+
+	return result;
+}
+
+UtilStr
+TextToCString( CALLS_ const text *const t, ALLOCATOR_PTR(alloc) ) {
+	CALL_LINK();
+	/* must cast away the const, unfortunately */
+	text	  *tunpacked = pg_detoast_datum_packed((struct varlena *) t);
+	size_t	len = VARSIZE_ANY_EXHDR(tunpacked);
+	char	  *result;
+
+	result = CALL_ALLOC(alloc, len + 1);
+	memcpy(result, VARDATA_ANY(tunpacked), len);
+	result[len] = '\0';
+
+	if (tunpacked != t)
+		pfree(tunpacked);
+
+	return result;
 }
 
 // NULL => NULL

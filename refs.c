@@ -106,7 +106,7 @@ static Toms SameOldTom(CALLS_ Toms new_tom) {
 }
 
 static void DebugTom(CALLS_ Toms tom) {
-	CALLS_LINK();
+	CALL_LINK();
 	if (!tom)
 		CALL_DEBUG_OUT("tom NULL");
 	else
@@ -129,6 +129,7 @@ FUNCTION_DEFINE(refs_debug_toms) {
 	}
 	const Toms start = Tom_Cache->tom;
 	const Toms end = start + Tom_Cache->size;
+	CALL_DEBUG_OUT("Found %d TOMs!\n", Tom_Cache->size);
 	for (Toms p = start; p < end ; p++ )
 		DebugTom(CALL_ p);
 	PG_RETURN_INT32( Tom_Cache->size );
@@ -343,14 +344,13 @@ static void TomToValue(
 			*text_ret = SpxQueryText(CALL_ tom->plan, args, call_SPI_palloc);
 			if ( null_ret )
 				*null_ret = !text_ret->varchar;
-			{ // paranoid testing: !!
-				if (text_ret->varchar)
-					{
+		  // if ( DebugLevel() )
+			{
+				if (text_ret->varchar) {
 						char *const s = text_to_cstring(text_ret ->varchar);
 						WARN_OUT("%s: value %s", __func__, s ?: "NULL");
 						pfree(s);
-					}
-				else {
+				} else {
 					WARN_OUT("%s: value %s", __func__, "NULL");
 				}
 			}
@@ -391,7 +391,27 @@ static void RefEtcToValue(
 		 CALL_ tom, args, SpxFuncNargs(fcinfo),
 		 text_ret, null_ret, datum_ret
 	);
+  // if ( DebugLevel() )
+  {
+		if (text_ret->varchar) {
+				char *const s = text_to_cstring(text_ret ->varchar);
+				WARN_OUT("%s: pre value %s", __func__, s ?: "NULL");
+				pfree(s);
+		} else {
+				WARN_OUT("%s: pre value %s", __func__, "NULL");
+		}
+	}
 	FinishSPX(CALL_ level);
+  // if ( DebugLevel() )
+  {
+		if (text_ret->varchar) {
+				char *const s = text_to_cstring(text_ret ->varchar);
+				WARN_OUT("%s: value %s", __func__, s ?: "NULL");
+				pfree(s);
+		} else {
+				WARN_OUT("%s: value %s", __func__, "NULL");
+		}
+	}
 }
 
 /* Handles most text-returning operations, with exceptions:
@@ -406,7 +426,8 @@ FUNCTION_DEFINE(call_text_method) {
 	if (is_null)
 		PG_RETURN_NULL();
 	CallAssert(value.varchar);
-	{															// if debug_level() ??
+	// if ( DebugLevel() )
+	{
 		char *const s = text_to_cstring(value.varchar);
 		WARN_OUT("%s: value %s", __func__, s ?: "NULL");
 		pfree(s);
