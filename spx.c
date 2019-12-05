@@ -88,7 +88,7 @@ void *spx_obj_alloc(size_t size) {
 // free object if reference count is now zero
 // NOTE: We're currently not actually freeing anything!!
 extern void SpxTryFreeOne(CALLS_ SpxObjHdr p) {
-	CALL_BASE();
+	CALL_LINK();
 	if (p == 0) {
 		CALL_WARN_OUT("Null Object!");
 		return;
@@ -112,7 +112,7 @@ extern void SpxTryFreeOne(CALLS_ SpxObjHdr p) {
 // free any objects on TheWheel that are no longer in use
 // When do we imagine we might need this??
 extern void SpxTryFreeSome(_CALLS_) {
-	CALL_BASE();
+	CALL_LINK();
 	// SpxObjHdr p, next;
 	CALL_WARN_OUT("Declining to FreeSome");
 	#if 0
@@ -142,7 +142,7 @@ int SpxFuncArgs(PG_FUNCTION_ARGS, Datum arg[], char is_null[]) {
 extern bool SpxCheckArgNonNull(
 	CALLS_ PG_FUNCTION_ARGS, enum spx_check_levels level, int arg
 ) {
-	CALL_BASE();
+	CALL_LINK();
 	if ( SpxFuncArgNull(fcinfo, arg) )
 		switch (level) {
 		case spx_check_error: CALL_BUG_OUT("arg %d null", arg);
@@ -157,7 +157,7 @@ extern bool SpxCheckArgCount(
 	CALLS_ PG_FUNCTION_ARGS, enum spx_check_levels level,
 	int min, int max	// max = -1 if none
 ) {
-	CALL_BASE();
+	CALL_LINK();
 	const int num = SpxFuncNargs(fcinfo);
 	if ( ( min != spx_check_none && num < min )
 		|| ( max != spx_check_none && num > max ) )
@@ -194,7 +194,7 @@ extern bool SpxCheckArgTypeOid(
 	CALLS_ PG_FUNCTION_ARGS, enum spx_check_levels level,
 	int arg, SpxTypeOids expected, int *num_unknown
 ) {
-	CALL_BASE();
+	CALL_LINK();
 	const Oid actual = SpxFuncArgType(fcinfo, arg);
 	if ( actual == InvalidOid ) {
 		if (num_unknown) ++*num_unknown;
@@ -222,7 +222,7 @@ extern int SpxCheckArgsRegtypesMinMax(
 	CALLS_ PG_FUNCTION_ARGS, enum spx_check_levels level,
 	const Oid* types, const int num_types, int min, int max
 ) {
-	CALL_BASE();
+	CALL_LINK();
 	if ( !SpxCheckArgCount(CALL_ fcinfo, level, min, max) )
 		return 0;
 	const int num_args = SpxFuncNargs(fcinfo);
@@ -240,7 +240,7 @@ extern int SpxCheckArgsMinMax(
 	CALLS_ PG_FUNCTION_ARGS, enum spx_check_levels level,
 	int min, int max, SpxTypeOids arg_type, ...
 ) {
-	CALL_BASE();
+	CALL_LINK();
 	if ( !SpxCheckArgCount(CALL_ fcinfo, level, min, max) )
 		return 0;
 	int arg = 0, unknown = 0;
@@ -260,7 +260,7 @@ extern int SpxCheckArgs(
 	CALLS_ PG_FUNCTION_ARGS, enum spx_check_levels level,
 	SpxTypeOids arg_type, ...
 ) {
-	CALL_BASE();
+	CALL_LINK();
 	int arg = 0, unknown = 0;
 	va_list typeargs;
 	va_start(typeargs, arg_type);
@@ -371,7 +371,7 @@ const SpxTypeOids
  */
 
 extern void SpxRequireTypes(CALLS_ SpxTypeOids *types, bool reinit) {
-	CALL_BASE();
+	CALL_LINK();
 	for ( ; types; types = types->required )
 		if ( reinit || !types->type_oid ) {
 			const SpxTypes ourtype = SpxTypeByName(CALL_ types->type_name);
@@ -432,7 +432,7 @@ static size_t SchemaNameDelim(
 	CALLS_ char *const dst, size_t const size,
 	const SpxSchemas s, const Str name, const char d
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 #if 0
 	// crashes server!
 	const size_t len = snprintf(dst, size, "%s.%s%c", s->name, name, d);
@@ -585,7 +585,7 @@ static SpxSchemaPath LoadSchemaPath(_CALLS_) {
 	static SpxPlans plan;
 	SpxPlan0( CALL_ &plan,
 		"SELECT DISTINCT "
-	" id, schema_name, schema_oid "
+	" id::integer, schema_name, schema_oid "
 		" FROM s0_lib.schema_path_by_id "
 	);
 	enum {id_, name_, oid_ };
@@ -616,7 +616,7 @@ static SpxSchemaPath LoadSchemaPath(_CALLS_) {
 }
 
 extern int SpxLoadSchemaPath(_CALLS_) {
-	CALL_BASE();
+	CALL_LINK();
 	const SpxSchemaPath p = LoadSchemaPath(_CALL_);
 	SPX_OBJ_REF_DECR(Spx_Schema_Path);
 	Spx_Schema_Path = p;
@@ -626,10 +626,10 @@ extern int SpxLoadSchemaPath(_CALLS_) {
 static SpxSchemaCache LoadSchemas(_CALLS_) {
 	enum schema_fields {	id_, name_, oid_, name_len_ };
 	static const char select_schemas[] = "SELECT DISTINCT"
-		" id, schema_name, schema_oid, schema_name_len"
+		" id::integer, schema_name, schema_oid, schema_name_len"
 		" FROM s0_lib.schema_view"
 		" ORDER BY schema_name";
-	CALL_BASE();
+	CALL_LINK();
 	CALL_DEBUG_OUT("==> LoadSchemas");
 	static SpxPlans plan;
 	SpxPlan0( CALL_ &plan, select_schemas);
@@ -666,7 +666,12 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 		p->id = RowColInt32(CALL_ row, id_, Int32_Type, NULL);
 		CallAssertMsg( p->id >= 0 && p->id <= max_id,
 			"row %d bad schema id %d", row, p->id );
-		p->oid = RowColOid(CALL_ row, oid_, Oid_Type, 0);
+		bool oid_is_null;
+		p->oid = RowColOid(CALL_ row, oid_, Oid_Type, &oid_is_null);
+		if (oid_is_null) {
+			CALL_WARN_OUT("Schema id %d has no OID yet!", p->id);
+			p->oid = 0;
+		}
 		const int name_len = RowColInt32(CALL_ 0, name_len_, Int32_Type, NULL);
 		sum_text_too += spx_aligned_size(name_len+1);
 		/* Method one: Get the name as a text dataum and copy it
@@ -709,7 +714,7 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 }
 
 extern int SpxLoadSchemas(_CALLS_) {
-	CALL_BASE();
+	CALL_LINK();
 	CALL_DEBUG_OUT("Before LoadSchemas");
 	const SpxSchemaCache cache = LoadSchemas(_CALL_);
 	SPX_OBJ_REF_DECR(Spx_Schema_Cache);
@@ -773,6 +778,7 @@ extern SpxSchemas SpxSchemaByName(CALLS_ StrPtr name) {
 
 FUNCTION_DEFINE(unsafe_spx_load_schemas) {
 	CALL_BASE();
+	CALL_DEBUG_OUT("+unsafe_spx_load_schemas();");
 	SPX_FUNC_NUM_ARGS_IS(0);
 	const int level = StartSPX(_CALL_);
 	const int32 num_schemas = SpxLoadSchemas(_CALL_);
@@ -782,6 +788,7 @@ FUNCTION_DEFINE(unsafe_spx_load_schemas) {
 
 FUNCTION_DEFINE(unsafe_spx_load_schema_path) {
 	CALL_BASE();
+	CALL_DEBUG_OUT("+unsafe_spx_load_schema_path();");
 	SPX_FUNC_NUM_ARGS_IS(0);
 	const int level = StartSPX(_CALL_);
 	const int32 num_schemas = SpxLoadSchemaPath(_CALL_);
@@ -852,7 +859,7 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 	CALL_DEBUG_OUT("==> LoadTypes");
 	static SpxPlans plan;
 	SpxPlan0(CALL_ &plan, "SELECT DISTINCT "
-		"oid_, name_, schema_id_, typlen_, typbyval_, name_size_, sum_text_"
+		"oid_, name_, schema_id_::integer, typlen_, typbyval_, name_size_, sum_text_"
 	" FROM s1_refs.type_view ORDER BY name_");
 	enum {
 		oid_, name_, schema_id_, typlen_, typbyval_, name_size_, sum_text_
@@ -911,7 +918,7 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 }
 
 extern int SpxLoadTypes(_CALLS_) {
-	CALL_BASE();
+	CALL_LINK();
 	const SpxTypeCache cache = LoadTypes(_CALL_);
 	SPX_OBJ_REF_DECR(Spx_Type_Cache);
 	//	Spx_Type_Cache = SPX_OBJ_REF_INCR(cache);
@@ -951,6 +958,7 @@ extern SpxTypes SpxTypeByName(CALLS_ StrPtr name) {
 
 FUNCTION_DEFINE(unsafe_spx_load_types) {
 	CALL_BASE();
+	CALL_DEBUG_OUT("+unsafe_spx_load_types();");
 	SPX_FUNC_NUM_ARGS_IS(0);
 	const int level = StartSPX(_CALL_);
 	const int32 load_count = SpxLoadTypes(_CALL_);
@@ -1066,7 +1074,7 @@ extern size_t SpxCallStr(
 	CALLS_ char *dst, size_t size, SpxProcs p,
 	SpxTypeOids ret_type, const Oid arg_types[], int num_args
 ) {
-	CALL_BASE();
+	CALL_LINK();
 	CallAssert(num_args >= p->min_args);
 	CallAssert(num_args <= p->max_args);
 	size_t accum = 0;
@@ -1214,7 +1222,7 @@ static SpxProcCache LoadProcs(_CALLS_) {
 	CALL_DEBUG_OUT("==> LoadProcs");
 	static SpxPlans plan;
 	SpxPlan0(	CALL_ &plan, "SELECT DISTINCT"
-			" oid_, name_, schema_id, rettype_,"
+			" oid_, name_, schema_id::integer, rettype_,"
 			" readonly_, minargs_, maxargs_, argtypes_,"
 			" name_size_, sum_text_, sum_nargs_"
 	" FROM s1_refs.proc_view" " ORDER BY name_"			);
@@ -1289,7 +1297,7 @@ static SpxProcCache LoadProcs(_CALLS_) {
 }
 
 extern int SpxLoadProcs(_CALLS_) {
-	CALL_BASE();
+	CALL_LINK();
 	const SpxProcCache cache = LoadProcs(_CALL_);
 	SPX_OBJ_REF_DECR(Spx_Proc_Cache);
 	//	Spx_Proc_Cache = SPX_OBJ_REF_INCR(cache);
@@ -1329,11 +1337,51 @@ extern SpxProcs SpxProcByName(CALLS_ StrPtr name) {
 
 FUNCTION_DEFINE(unsafe_spx_load_procs) {
 	CALL_BASE();
+	CALL_DEBUG_OUT("+unsafe_spx_load_procs();");
 	SPX_FUNC_NUM_ARGS_IS(0);
 	const int level = StartSPX(_CALL_);
 	const int32 load_count = SpxLoadProcs(_CALL_);
 	FinishSPX(CALL_ level);
 	PG_RETURN_INT32(load_count);
+}
+
+// https://www.postgresql.org/docs/12/spi-examples.html
+FUNCTION_DEFINE(spx_test_select) {
+    char *command;
+    int cnt;
+    int ret;
+    uint64 proc;
+
+    /* Convert given text object to a C string */
+    command = text_to_cstring(PG_GETARG_TEXT_PP(0));
+    cnt = PG_GETARG_INT32(1);
+
+    SPI_connect();
+    ret = SPI_exec(command, cnt);
+    proc = SPI_processed;
+    /*
+     * Print any returned rows with elog(INFO).
+     */
+    if (ret > 0 && SPI_tuptable != NULL) {
+        TupleDesc tupdesc = SPI_tuptable->tupdesc;
+        SPITupleTable *tuptable = SPI_tuptable;
+        char buf[8192];
+        uint64 j;
+
+        for (j = 0; j < proc; j++) {
+            HeapTuple tuple = tuptable->vals[j];
+            int i;
+
+            for (i = 1, buf[0] = 0; i <= tupdesc->natts; i++)
+                snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), " %s%s",
+                        SPI_getvalue(tuple, tupdesc, i),
+                        (i == tupdesc->natts) ? " " : " |");
+            elog(INFO, "spx_test_select: %s", buf);
+        }
+    }
+    SPI_finish();
+    pfree(command);
+    PG_RETURN_INT64(proc);
 }
 
 /* * General Initialization */
@@ -1346,8 +1394,9 @@ extern struct spx_caches SpxCurrentCaches(void) {
 }
 
 // @pre( InSPX(_CALL_) )
+// we should check this!!!
 extern void SpxInitSPX(_CALLS_) {
-	CALL_BASE();
+	CALL_LINK();
 	CALL_DEBUG_OUT("+");
 	SpxLoadSchemas(_CALL_);
 	SpxLoadSchemaPath(_CALL_);
@@ -1357,10 +1406,12 @@ extern void SpxInitSPX(_CALLS_) {
 }
 
 // @pre( ! InSPX(_CALL_) at this level )
+// we should check this!!!
 extern void SpxInit(_CALLS_) {
-	CALL_BASE();
+	CALL_LINK();
 	CALL_DEBUG_OUT("+StartSPX(_CALL_);");
 	const int level = StartSPX(_CALL_);
+	// Shouldn't this be conditional on NOT ALREADY BEING INITIALIZED???
 	SpxInitSPX(_CALL_);
 	FinishSPX(CALL_ level);
 }
@@ -1385,8 +1436,8 @@ FUNCTION_DEFINE(spx_init) {
 */
 FUNCTION_DEFINE(unsafe_spx_initialize) {
 	CALL_BASE();
+	CALL_DEBUG_OUT("+unsafe_spx_initialize();");
 	SPX_FUNC_NUM_ARGS_IS(0);
-	Initialize();
 	// CallAssert(spx_version); // always true
 	Initialize();
 	PG_RETURN_CSTRING( NewStr(CALL_ spx_version, call_palloc) );
@@ -1394,8 +1445,10 @@ FUNCTION_DEFINE(unsafe_spx_initialize) {
 
 FUNCTION_DEFINE(spx_collate_locale) {
 	CALL_BASE();
+	CALL_DEBUG_OUT("+spx_collate_locale();");
 	SPX_FUNC_NUM_ARGS_IS(0);
-	SpxInit(_CALL_);
+	//	SpxInit(_CALL_);	// WTF???
+	//	RequireSpx(_CALL_);	// better, but is it needed at all??
 	UtilStr s = NewStr(CALL_ setlocale(LC_COLLATE, 0), call_palloc);
 	CallAssert(s);
 	PG_RETURN_CSTRING(s);
@@ -1692,7 +1745,7 @@ extern void SpxPlanNvargs(
 static StrPtr StrValueSPX(
 	CALLS_ HeapTuple row, TupleDesc rowdesc, const int col
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 	char *const s1 = SPI_getvalue(row,  rowdesc, col+1);
 
 	return s1;
@@ -1809,21 +1862,35 @@ extern bool RowColBool(CALLS_ int row, int col, bool *is_null_ret) {
 	return DatumGetBool(d);
 }
 
+// Experimenting with handling NULLs more explicitly!!
 extern Oid RowColTypeOid( CALLS_ int row, int col,
 				 SpxTypeOids *result_type_ret, bool *is_null_ret ) {
 	CALL_LINK();
-	const Datum d = RowColDatumType(CALL_ row, col, result_type_ret, is_null_ret);
-	CALL_DEBUG_OUT( "Returning %d", (int) DatumGetObjectId(d) );
-	return DatumGetObjectId(d);
+	bool is_null, *const is_null_ptr = is_null_ret ?: &is_null;
+	SpxTypeOids result_type, *const result_type_ptr = result_type_ret ?: &result_type;
+	const Datum d = RowColDatumType(CALL_ row, col, result_type_ptr, is_null_ptr);
+	CallAssert(!*is_null_ptr || is_null_ret);
+	if (*is_null_ptr)
+		CALL_DEBUG_OUT( "Returning NULL" );
+	else
+		CALL_DEBUG_OUT( "Returning %d::%d",
+										(int) DatumGetObjectId(d), (int) result_type.type_oid );
+	return *is_null_ptr ? 0 : DatumGetObjectId(d);
 }
 
+// Experimenting with handling NULLs more explicitly!!
 extern Oid RowColOid(
 	CALLS_ int row, int col, SpxTypeOids expected, bool *is_null_ret
 ) {
 	CALL_LINK();
-	const Datum d = RowColDatum(CALL_ row, col, expected, is_null_ret);
-	CALL_DEBUG_OUT( "Returning %d", (int) DatumGetObjectId(d) );
-	return DatumGetObjectId(d);
+	bool is_null, *const is_null_ptr = is_null_ret ?: &is_null;
+	const Datum d = RowColDatum(CALL_ row, col, expected, is_null_ptr);
+	CallAssert(!*is_null_ptr || is_null_ret);
+	if (*is_null_ptr)
+		CALL_DEBUG_OUT( "Returning NULL" );
+	else
+		CALL_DEBUG_OUT( "Returning %d", (int) DatumGetObjectId(d) );
+	return *is_null_ptr ? 0 : DatumGetObjectId(d);
 }
 
 extern StrPtr RowColStrPtr(CALLS_ int row, int col) {
@@ -1854,7 +1921,7 @@ extern StrPtr RowColStr(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
 
 // This seems to be quite a mess!!  We're not even using alloc!!
 extern SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
-	CALL_BASE();
+	CALL_LINK();
 	const StrPtr s = RowColStrPtr(CALL_  row, col);
 	WARN_OUT("%s: row %d, col %d, value %s", __func__, row, col, s ?: "NULL");
 	text *const tp = CStringToText(CALL_ s, alloc);
@@ -1902,7 +1969,7 @@ static void Update1(CALLS_ SpxPlans plan, Datum args[]) {
 extern Datum SpxUpdateDatumType( CALLS_ SpxPlans plan, Datum args[],
 	SpxTypeOids *result_type_ret, bool *is_null_ret
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Update1(CALL_ plan, args);
 	return RowColDatumType(CALL_ 0, 0, result_type_ret, is_null_ret);
 }
@@ -1910,7 +1977,7 @@ extern Datum SpxUpdateDatumType( CALLS_ SpxPlans plan, Datum args[],
 // execute a read-write query plan returning a datum or NULL result type 
 extern Datum SpxUpdateDatum( CALLS_ SpxPlans plan, Datum args[],
 			SpxTypeOids expected, bool *is_null_ret ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Update1(CALL_ plan, args);
 	return RowColDatum(CALL_ 0, 0, expected, is_null_ret);
 }
@@ -1918,7 +1985,7 @@ extern Datum SpxUpdateDatum( CALLS_ SpxPlans plan, Datum args[],
 // execute a query plan returning an oid
 extern Oid SpxUpdateTypeOid( CALLS_ SpxPlans plan, Datum args[],
 				SpxTypeOids *result_type_ret, bool *is_null_ret ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Update1(CALL_ plan, args);
 	return RowColTypeOid(CALL_ 0, 0, result_type_ret, is_null_ret);
 }
@@ -1926,7 +1993,7 @@ extern Oid SpxUpdateTypeOid( CALLS_ SpxPlans plan, Datum args[],
 // execute a query plan returning an oid
 extern Oid SpxUpdateOid( CALLS_ SpxPlans plan, Datum args[],
 		SpxTypeOids result_type, bool *is_null_ret ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Update1(CALL_ plan, args);
 	return RowColOid(CALL_ 0, 0, result_type, is_null_ret);
 }
@@ -1936,7 +2003,7 @@ extern int32 SpxUpdateTypeInt32(
 	CALLS_ SpxPlans plan, Datum args[],
 	SpxTypeOids *result_type_ret, bool *is_null_ret
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Update1(CALL_ plan, args);
 	return RowColTypeInt32(CALL_ 0, 0, result_type_ret, is_null_ret);
 }
@@ -1946,7 +2013,7 @@ extern int64 SpxUpdateTypeInt64(
 	CALLS_ SpxPlans plan, Datum args[],
 	SpxTypeOids *result_type_ret, bool *is_null_ret
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Update1(CALL_ plan, args);
 	return RowColTypeInt64(CALL_ 0, 0, result_type_ret, is_null_ret);
 }
@@ -1954,7 +2021,7 @@ extern int64 SpxUpdateTypeInt64(
 // execute a query plan returning an integer
 extern int32 SpxUpdateInt32( CALLS_ SpxPlans plan, Datum args[],
 			SpxTypeOids result_type, bool *is_null_ret ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Update1(CALL_ plan, args);
 	return RowColInt32(CALL_ 0, 0, result_type, is_null_ret);
 }
@@ -1962,7 +2029,7 @@ extern int32 SpxUpdateInt32( CALLS_ SpxPlans plan, Datum args[],
 // execute a query plan returning an integer
 extern int64 SpxUpdateInt64( CALLS_ SpxPlans plan, Datum args[],
 			SpxTypeOids result_type, bool *is_null_ret ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Update1(CALL_ plan, args);
 	return RowColInt64(CALL_ 0, 0, result_type, is_null_ret);
 }
@@ -1970,7 +2037,7 @@ extern int64 SpxUpdateInt64( CALLS_ SpxPlans plan, Datum args[],
 // execute a query plan returning an integer or NULL result_type or just 0 
 extern int32 SpxUpdateIfInt32( CALLS_ SpxPlans plan, Datum args[],
 				SpxTypeOids *result_type_ret, int32 or_else ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Update1(CALL_ plan, args);
 	bool is_null;
 	const int32 i =  RowColTypeInt32(CALL_ 0, 0, result_type_ret, &is_null);
@@ -1980,7 +2047,7 @@ extern int32 SpxUpdateIfInt32( CALLS_ SpxPlans plan, Datum args[],
 // execute a query plan returning an integer or NULL result_type or just 0 
 extern int64 SpxUpdateIfInt64( CALLS_ SpxPlans plan, Datum args[],
 				SpxTypeOids *result_type_ret, int64 or_else ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Update1(CALL_ plan, args);
 	bool is_null;
 	const int64 i =  RowColTypeInt64(CALL_ 0, 0, result_type_ret, &is_null);
@@ -1995,7 +2062,7 @@ extern int64 SpxUpdateIfInt64( CALLS_ SpxPlans plan, Datum args[],
 extern bool SpxUpdateBool(
 	CALLS_ SpxPlans plan, Datum args[], bool *is_null_ret
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Update1(CALL_ plan, args);
 	return RowColBool(CALL_ 0, 0, is_null_ret);
 }
@@ -2004,7 +2071,7 @@ extern bool SpxUpdateBool(
 extern StrPtr SpxUpdateStr(
 	CALLS_ SpxPlans plan, Datum args[], ALLOCATOR_PTR(alloc)
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Update1(CALL_ plan, args);
 	return RowColStr(CALL_ 0, 0, alloc);
 }
@@ -2013,7 +2080,7 @@ extern StrPtr SpxUpdateStr(
 extern SpxText SpxUpdateText(
 	CALLS_ SpxPlans plan, Datum args[], ALLOCATOR_PTR(alloc)
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Update1(CALL_ plan, args);
 	return RowColText(CALL_ 0, 0, alloc);
 }
@@ -2033,7 +2100,7 @@ static void Query1(CALLS_ SpxPlans plan, Datum args[]) {
 // execute a readonly query plan returning a datum or NULL result type 
 extern Datum SpxQueryDatumType( CALLS_ SpxPlans plan, Datum args[],
 		SpxTypeOids *result_type_ret, bool *is_null_ret ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Query1(CALL_ plan, args);
 	return RowColDatumType(CALL_ 0, 0, result_type_ret, is_null_ret);
 }
@@ -2041,7 +2108,7 @@ extern Datum SpxQueryDatumType( CALLS_ SpxPlans plan, Datum args[],
 // execute a readonly query plan returning a datum or NULL result type 
 extern Datum SpxQueryDatum( CALLS_ SpxPlans plan, Datum args[],
 			SpxTypeOids expected, bool *is_null_ret ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Query1(CALL_ plan, args);
 	return RowColDatum(CALL_ 0, 0, expected, is_null_ret);
 }
@@ -2050,7 +2117,7 @@ extern Datum SpxQueryDatum( CALLS_ SpxPlans plan, Datum args[],
 SpxText 
 SpxQueryText(CALLS_ SpxPlans plan, Datum args[], ALLOCATOR_PTR(alloc)
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Query1(CALL_ plan, args);
 	return RowColText(CALL_ 0, 0, alloc);
 }
@@ -2058,7 +2125,7 @@ SpxQueryText(CALLS_ SpxPlans plan, Datum args[], ALLOCATOR_PTR(alloc)
 // execute a query plan returning an oid
 extern Oid SpxQueryTypeOid( CALLS_ SpxPlans plan, Datum args[],
 				SpxTypeOids *result_type_ret, bool *is_null_ret ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Query1(CALL_ plan, args);
 	return RowColTypeOid(CALL_ 0, 0, result_type_ret, is_null_ret);
 }
@@ -2066,7 +2133,7 @@ extern Oid SpxQueryTypeOid( CALLS_ SpxPlans plan, Datum args[],
 // execute a query plan returning an oid
 extern Oid SpxQueryOid( CALLS_ SpxPlans plan, Datum args[],
 		SpxTypeOids result_type, bool *is_null_ret ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Query1(CALL_ plan, args);
 	return RowColOid(CALL_ 0, 0, result_type, is_null_ret);
 }
@@ -2076,7 +2143,7 @@ extern int32 SpxQueryTypeInt32(
 	CALLS_ SpxPlans plan, Datum args[],
 	SpxTypeOids *result_type_ret, bool *is_null_ret
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Query1(CALL_ plan, args);
 	return RowColTypeInt32(CALL_ 0, 0, result_type_ret, is_null_ret);
 }
@@ -2086,7 +2153,7 @@ extern int64 SpxQueryTypeInt64(
 	CALLS_ SpxPlans plan, Datum args[],
 	SpxTypeOids *result_type_ret, bool *is_null_ret
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Query1(CALL_ plan, args);
 	return RowColTypeInt64(CALL_ 0, 0, result_type_ret, is_null_ret);
 }
@@ -2094,7 +2161,7 @@ extern int64 SpxQueryTypeInt64(
 // execute a query plan returning an integer
 extern int32 SpxQueryInt32( CALLS_ SpxPlans plan, Datum args[],
 			SpxTypeOids result_type, bool *is_null_ret ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Query1(CALL_ plan, args);
 	return RowColInt32(CALL_ 0, 0, result_type, is_null_ret);
 }
@@ -2102,7 +2169,7 @@ extern int32 SpxQueryInt32( CALLS_ SpxPlans plan, Datum args[],
 // execute a query plan returning an integer
 extern int64 SpxQueryInt64( CALLS_ SpxPlans plan, Datum args[],
 			SpxTypeOids result_type, bool *is_null_ret ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Query1(CALL_ plan, args);
 	return RowColInt64(CALL_ 0, 0, result_type, is_null_ret);
 }
@@ -2110,7 +2177,7 @@ extern int64 SpxQueryInt64( CALLS_ SpxPlans plan, Datum args[],
 // execute a query plan returning an integer or NULL result_type or just 0 
 extern int32 SpxQueryIfInt32( CALLS_ SpxPlans plan, Datum args[],
 				SpxTypeOids *result_type_ret, int32 or_else ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Query1(CALL_ plan, args);
 	bool is_null;
 	const int32 i =  RowColTypeInt32(CALL_ 0, 0, result_type_ret, &is_null);
@@ -2120,7 +2187,7 @@ extern int32 SpxQueryIfInt32( CALLS_ SpxPlans plan, Datum args[],
 // execute a query plan returning an integer or NULL result_type or just 0 
 extern int64 SpxQueryIfInt64( CALLS_ SpxPlans plan, Datum args[],
 				SpxTypeOids *result_type_ret, int64 or_else ) {
-	CALL_LINK();
+	CALLS_LINK();
 	Query1(CALL_ plan, args);
 	bool is_null;
 	const int64 i =  RowColTypeInt64(CALL_ 0, 0, result_type_ret, &is_null);
@@ -2135,7 +2202,7 @@ extern int64 SpxQueryIfInt64( CALLS_ SpxPlans plan, Datum args[],
 // execute a query plan returning a boolean result
 bool 
 SpxQueryBool(CALLS_ SpxPlans plan, Datum args[], bool *is_null_ret) {
-	CALL_LINK();
+	CALLS_LINK();
 	Query1(CALL_ plan, args);
 	return RowColBool(CALL_ 0, 0, is_null_ret);
 }
@@ -2145,7 +2212,7 @@ SpxQueryBool(CALLS_ SpxPlans plan, Datum args[], bool *is_null_ret) {
 // execute a query plan returning a String or NULL 
 StrPtr 
 SpxQueryStr(CALLS_ SpxPlans plan, Datum args[], ALLOCATOR_PTR(alloc)) {
-	CALL_LINK();
+	CALLS_LINK();
 	Query1(CALL_ plan, args);
 	return RowColStr(CALL_ 0, 0, alloc);
 }
@@ -2154,12 +2221,13 @@ SpxQueryStr(CALLS_ SpxPlans plan, Datum args[], ALLOCATOR_PTR(alloc)) {
 
 // join call graph into call context string 
 static TmpStrPtr JoinCallAccum(CALLS_ size_t accum) {
-	CALL_BASE();
+	//	CALL_BASE();
+	CALLS_LINK();
 	char *result;
 	static const char separator[] = ".";
 	static const size_t sep_len = sizeof separator - 1;
 	if ( !_CALL_ ) {
-		result = (char *) CALL_ALLOC(call_palloc, accum + 1);
+		result = (char *) palloc(accum + 1);
 		*result = '\0';
 	} else {
 		const size_t fname_len = strlen(_CALL_->fname);
@@ -2182,14 +2250,18 @@ TmpStrPtr JoinCalls(_CALLS_) {
 /* Memory Allocation Functions */
 
 ALLOCATOR_FUNCTION(SessionAlloc) {
-	CALL_LINK();
+	CALLS_LINK();
 	CallAssert(size < MaxAllocationSize);
 	return malloc(size);
 }
 
 ALLOCATOR_FUNCTION(call_palloc) {
 	CALL_LINK();
-	AssertNotSPX(_CALL_);
+	// Why would we want this???
+	// Musn't use in debugging code -> infinite regress!!
+	// Guard against _CALL_ being NULL, not just here???
+	// so if we keep it we need to make it conditional!!!
+	//	AssertNotSPX(_CALL_);
 	CallAssert(size < MaxAllocationSize);
 	return palloc(size);
 }
@@ -2241,7 +2313,7 @@ For now, let's hack them to be better!
 
 text *
 CStringToText( CALLS_ UtilStr s, ALLOCATOR_PTR(alloc) ) {
-	CALL_LINK();
+	CALLS_LINK();
 	size_t len = s ? strlen(s) : 0;
 	text *const result = CALL_ALLOC(alloc, len + VARHDRSZ);
 
@@ -2269,6 +2341,15 @@ TextToCString( CALLS_ const text *const t, ALLOCATOR_PTR(alloc) ) {
 	return result;
 }
 
+// NULL && empty strings get a new 1-byte '\0'-terminated buffer
+// We need this to avoid infinite regress when used in debugging
+// code which is called by NewStr!
+// Should we WARN when we have a NULL string?
+StrPtr AllocStr( Str old_str, void *(*alloc)(size_t) ) {
+	Str old = old_str ?: "";
+	return strcpy( alloc( strlen(old) + 1 ), old );
+}
+
 // NULL => NULL
 // all other strings (including empty strings) will be reallocated
 // (empty strings get a new 1-byte buffer for a '\0' byte
@@ -2290,7 +2371,7 @@ StrPtr NewStr( CALLS_ Str old, ALLOCATOR_PTR(alloc) ) {
 
 #if 0
 extern SpxText SpxStrText( CALLS_ StrPtr str, ALLOCATOR_PTR(alloc) ) {
-	CALL_BASE();
+	CALL_LINK();
 	if (str == NULL)
 		return Spx_Null_Text;
 	const size_t str_len = strlen(str);
@@ -2324,7 +2405,7 @@ StrPtr StrCat(CALLS_ ALLOCATOR_PTR(alloc), const StrPtr s0, ...) {
 	StrPtr s;
 	char *buf;
 	size_t len = 0;
-	CALL_BASE();
+	CALL_LINK();
 
 	va_start(args, s0);
 	for (s = s0; s; s = va_arg(args, StrPtr))
@@ -2346,7 +2427,7 @@ StrPtr StrCatSlices(CALLS_ ALLOCATOR_PTR(alloc), const StrPtr start0, const StrP
 	va_list args;
 	StrPtr start, end;
 	size_t len = 0;
-	CALL_BASE();
+	CALL_LINK();
 
 	va_start(args, end0);
 	for ( start = start0, end = end0
@@ -2551,7 +2632,7 @@ extern SpxArrayInfo SpxNullArray(
 	CALLS_ SpxTypeOids elem_type,
 	SpxArrayInfo a, ALLOCATOR_PTR(alloc)
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 	return InitArrayInfo(CALL_ elem_type, true, 0, 1, 0, a, alloc);
 }
 
@@ -2559,7 +2640,7 @@ extern SpxArrayInfo SpxEmptyArray(
 	CALLS_ SpxTypeOids elem_type,
 	SpxArrayInfo a, ALLOCATOR_PTR(alloc)
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 	return InitArrayInfo(CALL_ elem_type, false, 0, 1, 0, a, alloc);
 }
 
@@ -2569,7 +2650,7 @@ extern SpxArrayInfo SpxNewArray(
 	Datum *data,
 	SpxArrayInfo a, ALLOCATOR_PTR(alloc)
 ) {
-	CALL_LINK();
+	CALLS_LINK();
 	return InitArrayInfo(CALL_ elem_type, false, nelems, 1, data, a, alloc);
 }
 

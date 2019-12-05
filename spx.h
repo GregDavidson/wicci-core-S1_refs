@@ -788,20 +788,22 @@ static inline void SpxRequired(_CALLS_) {
 	CallAssert(spx_Initialized_);
 }
 
- // @pre( InSPX(calls) ), idempotent
-static inline void RequireSpx(_CALLS_) {
-	CALLS_LINK();
-	extern int spx_Initialized_; // utl-debug.h: MODULE_TAG(Initialized_)
-	if ( ! spx_Initialized_ )
-		SpxInit(_CALL_);  // ...SPX ???
-}
-
-// @pre( not in SPX at this level ), itempotent
+ // @pre( !InSPX(calls) ), idempotent -- was Backwards!!! clients???
+// we should check this!!!
 static inline void RequireSpxSPX(_CALLS_) {
 	CALLS_LINK();
 	extern int spx_Initialized_; // utl-debug.h: MODULE_TAG(Initialized_)
 	if ( ! spx_Initialized_ )
-		SpxInitSPX(_CALL_);  // ...SPX ???
+		SpxInitSPX(_CALL_);
+}
+
+// @pre( inSPX(calls) ), itempotent -- was Backwards!!! clients???
+// we should check this!!!
+static inline void RequireSpx(_CALLS_) {
+	CALLS_LINK();
+	extern int spx_Initialized_; // utl-debug.h: MODULE_TAG(Initialized_)
+	if ( ! spx_Initialized_ )
+		SpxInit(_CALL_);
 }
 
 /* * PostgreSQL Interface Functions */
@@ -1342,10 +1344,9 @@ FUNCTION_DECLARE(spx_collate_locale);
 FUNCTION_DECLARE(unsafe_spx_load_schemas);
 FUNCTION_DECLARE(spx_debug_schemas);
 FUNCTION_DECLARE(unsafe_spx_load_schema_path);
-
 FUNCTION_DECLARE(unsafe_spx_load_types);
-
 FUNCTION_DECLARE(unsafe_spx_load_procs);
+FUNCTION_DECLARE(spx_test_select);
 
 #ifndef NO_TEST_FRAME
 
