@@ -214,6 +214,7 @@ extern int RefLoadToms(_CALLS_) {
 
 FUNCTION_DEFINE(unsafe_refs_load_toms) {	// () -> integer (count)
 	CALL_BASE();
+	CALL_DEBUG_OUT("+unsafe_refs_load_toms();");
 	SpxRequired(_CALL_);
 	SPX_FUNC_NUM_ARGS_IS(0);
 	const int level = StartSPX(_CALL_);
@@ -363,6 +364,7 @@ static void TomToValue(
 
 /* * op method dispatch without wicci magic */
 
+// Why aren't we passing a CALLS link???
 static void RefEtcToValue(
 	PG_FUNCTION_ARGS /*fcinfo*/,		// we use this
 	SpxText *text_ret,				// to either return this
@@ -734,6 +736,7 @@ extern int RefLoadTocs(_CALLS_) {
 
 FUNCTION_DEFINE(unsafe_refs_load_tocs) {	// () -> integer (count)
 	CALL_BASE();
+	CALL_DEBUG_OUT("+unsafe_refs_load_tocs();");
 	SpxRequired(_CALL_);
 	SPX_FUNC_NUM_ARGS_IS(0);
 	const int level = StartSPX(_CALL_);
