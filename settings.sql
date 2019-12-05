@@ -3,5 +3,18 @@
 \cd .Wicci/Core/S1_refs
 \i ../settings+sizes.sql
 
-SELECT set_schema_path('S1_refs','S0_lib','public');
-SELECT ensure_schema_ready();
+SELECT set_schema_path('s1_refs','s0_lib','public');
+SELECT spx_debug_on(); -- jgd debugging!!
+SELECT spx_test_select('SELECT ''About to call spx_collate_locate''', 0);
+-- SELECT ensure_schema_ready();
+-- these things don't really exist until part way through this schema
+-- so I've defined dummy versions of them that do nothing at the
+-- end of ../S0_lib/s0-lib.sql
+-- all of these seem to kill the server - am I calling the wrong one??
+SELECT spx_collate_locale();
+SELECT spx_test_select('SELECT ''About to call unsafe_spx_load_schemas''', 0);
+SELECT unsafe_spx_load_schemas();
+SELECT unsafe_spx_load_schema_path();
+SELECT unsafe_spx_load_types();
+SELECT unsafe_spx_load_procs();
+SELECT unsafe_spx_initialize();
