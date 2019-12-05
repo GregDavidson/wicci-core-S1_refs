@@ -149,10 +149,14 @@ SELECT oid_::oid, (
  spx_debug_schemas()
  unsafe_spx_load_schema_path()
 */
+-- needed for jgd debug!!  Remove DROP when remove that!!
+DROP FUNCTION IF EXISTS spx_initialize();
 CREATE OR REPLACE
 FUNCTION unsafe_spx_initialize() RETURNS cstring
 AS 'spx.so' LANGUAGE c;
 
+-- needed for jgd debug!!  Remove DROP when remove that!!
+DROP FUNCTION IF EXISTS spx_collate_locale();
 CREATE OR REPLACE
 FUNCTION spx_collate_locale() RETURNS cstring
 AS 'spx.so' LANGUAGE c;
@@ -172,6 +176,10 @@ AS 'spx.so' LANGUAGE c;
 CREATE OR REPLACE
 FUNCTION unsafe_spx_load_procs() RETURNS integer
 AS 'spx.so' LANGUAGE c;
+
+CREATE OR REPLACE
+FUNCTION spx_test_select(text, integer) RETURNS int8
+AS 'spx.so' LANGUAGE c STRICT;
 
 -- ** testing functions
 
