@@ -89,9 +89,9 @@ SELECT set_file('spx-test.sql', '$Id');
 
 SELECT test_func(
 	'spx_schema_by_id(integer)',
-	spx_schema_by_id(id_)::text,
+	spx_schema_by_id(id)::text,
 	'sql'
-) FROM schema_view WHERE name_ = 'sql';
+) FROM schema_view WHERE schema_name = 'sql';
 
 SELECT test_func(
 	'spx_type_by_oid(regtype)',
