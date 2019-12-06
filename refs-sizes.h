@@ -60,8 +60,8 @@
 
 #define GetArgTag(arg) PG_GETARG_INT32(arg)
 #define TagGetDatum(tag) Int32GetDatum(tag)
-#define RowColTagType(r, c, t, n) RowColTypeInt32(CALL_  (r), (c), (t), (n))
-#define RowColTag(r, c, t, n) RowColInt32(CALL_  (r), (c), (t), (n))
+#define RowColTagType(r, c, t, n) RowColInt32(CALL_  (r), (c), (t), (n))
+#define RowColTag(r, c, t, n) RowColTypInt32(CALL_  (r), (c), (t), (n))
 #define RowColTag0(r, c, t) RowColIfInt32(CALL_  (r), (c), (t), 0)
 #define QueryTagType(p, a, t, n) SpxQueryTypeInt32(CALL_  (p), (a), (t), (n))
 #define QueryTag(p, a, t, n) SpxQueryInt32(CALL_  (p), (a), (t), (n))
@@ -69,8 +69,8 @@
 
 #define GetArgId(arg) ID_SUFFIX(PG_GETARG_INT)(arg)
 #define IdGetDatum(id) ID_INFIX(Int,GetDatum)(id)
-#define RowColIdType(r,c,t,n) ID_SUFFIX(RowColTypeInt)(CALL_ (r),(c),(t),(n))
-#define RowColId(r,c,t,n) ID_SUFFIX(RowColInt)(CALL_ (r),(c),(t),(n))
+#define RowColIdType(r,c,t,n) ID_SUFFIX(RowColInt)(CALL_ (r),(c),(t),(n))
+#define RowColId(r,c,t,n) ID_SUFFIX(RowColTypInt)(CALL_ (r),(c),(t),(n))
 #define RowColId0(r,c,t) ID_SUFFIX(RowColIfInt)(CALL_ (r),(c),(t),0)
 #define QueryIdType(p,a,t,n) ID_SUFFIX(SpxQueryTypeInt)(CALL_ (p),(a),(t),(n))
 #define QueryId(p,a,t,n) ID_SUFFIX(SpxQueryInt)(CALL_ (p),(a),(t),(n))
@@ -83,8 +83,8 @@
 #define GetArgRef(arg) REF_SUFFIX(PG_GETARG_INT)(arg)
 #define DatumGetRef(x) REF_SUFFIX(DatumGetInt)(x)
 #define RefGetDatum(ref) REF_INFIX(Int,GetDatum)(ref)
-#define RowColRefType(r,c,t,n) REF_SUFFIX(RowColTypeInt)(CALL_ (r),(c),(t),(n))
-#define RowColRef(r,c,t,n) REF_SUFFIX(RowColInt)(CALL_ (r),(c),(t),(n))
+#define RowColRefType(r,c,t,n) REF_SUFFIX(RowColInt)(CALL_ (r),(c),(t),(n))
+#define RowColRef(r,c,t,n) REF_SUFFIX(RowColTypInt)(CALL_ (r),(c),(t),(n))
 #define QueryRefType(p,a,t,n) REF_SUFFIX(SpxQueryTypeInt)(CALL_ (p),(a),(t),(n))
 #define QueryRef(p,a,t,n) REF_SUFFIX(SpxQueryInt)(CALL_ (p),(a),(t),(n))
 

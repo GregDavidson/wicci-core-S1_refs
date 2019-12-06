@@ -1202,14 +1202,16 @@ SpxText SpxUpdateText(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
 */
 Datum RowColDatumType(CALLS_ int row, int col, SpxTypeOids *type_ret, bool *null_ret);
 Datum RowColDatum(CALLS_ int row, int col, SpxTypeOids result_type, bool *null_ret);
-Oid RowColTypeOid(CALLS_ int row, int col, SpxTypeOids *type_ret, bool *null_ret);
+Oid RowColOid(CALLS_ int row, int col, SpxTypeOids *type_ret, bool *null_ret);
 Oid RowColOid(CALLS_ int row, int col, SpxTypeOids result_type, bool *null_ret);
-int32 RowColTypeInt32(CALLS_ int row, int col, SpxTypeOids *type_ret, bool *null_ret);
-int64 RowColTypeInt64(CALLS_ int row, int col, SpxTypeOids *type_ret, bool *null_ret);
-int32 RowColInt32(CALLS_ int row, int col, SpxTypeOids result_type, bool *null_ret);
-int64 RowColInt64(CALLS_ int row, int col, SpxTypeOids result_type, bool *null_ret);
+int32 RowColInt32(CALLS_ int row, int col, SpxTypeOids *type_ret, bool *null_ret);
+int64 RowColInt64(CALLS_ int row, int col, SpxTypeOids *type_ret, bool *null_ret);
+int32 RowColTypInt32(CALLS_ int row, int col, SpxTypeOids result_type, bool *null_ret);
+int64 RowColTypInt64(CALLS_ int row, int col, SpxTypeOids result_type, bool *null_ret);
+#if 0
 int32 RowColIfTypeInt32(CALLS_ int row,int col,SpxTypeOids *type_ret, int32 or_else);
 int64 RowColIfTypeInt64(CALLS_ int row, int col, SpxTypeOids *type_ret, int64 or_else);
+#endif
 bool RowColBool(CALLS_ int row, int col, bool *null_ret);
 StrPtr RowColStrPtr(CALLS_ int row, int col);  // fragile!!! why???
 StrPtr RowColStr(CALLS_ int row, int col, ALLOCATOR_PTR(alloc));
