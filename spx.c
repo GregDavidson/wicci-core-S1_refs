@@ -582,11 +582,7 @@ static SpxSchemaPath LoadSchemaPath(_CALLS_) {
 	CALL_LINK();
 	CALL_DEBUG_OUT("==> LoadSchemaPath");
 	static SpxPlans plan;
-	SpxPlan0( CALL_ &plan,
-		"SELECT DISTINCT "
-		" id::integer, schema_name, schema_oid "
-		" FROM s0_lib.schema_path_by_id "
-	);
+	SpxPlan0( CALL_ &plan, "SELECT id::int4 FROM unnest(schema_path_array()) id"	);
 	enum {id_, name_, oid_ };
 	const int num_rows = SpxQueryDB(plan, NULL, MAX_SCHEMAS);
 	const SchemaPathPtr sp =
