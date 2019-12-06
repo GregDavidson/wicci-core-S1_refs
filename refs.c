@@ -175,15 +175,15 @@ static TomCachePtr LoadToms(_CALLS_) {
 	TomPtr p = cache->tom, pp = p;
 	for (; p < cache->tom + num_rows; pp = p++) {
 		int row = p - cache->tom;
-		p->tag = RowColInt32(CALL_ row, tag_, RefTagIntType(), 0);
+		p->tag = RowColTypedInt32(CALL_ row, tag_, RefTagIntType(), 0);
 		// tag is either in TOC or is -1 to indicate an op fallback
 		p->operation = SpxProcByOid(
-	CALL_ RowColOid(CALL_ row, operation_, Procedure_Type, 0)
+	CALL_ RowColTypedOid(CALL_ row, operation_, Procedure_Type, 0)
 		);
 		if (last_op && last_op != p->operation)
 			++num_ops;
 		p->method = SpxProcByOid(
-	CALL_ RowColOid(CALL_ row, method_, Procedure_Type, 0)
+	CALL_ RowColTypedOid(CALL_ row, method_, Procedure_Type, 0)
 		);
 		CallAssertMsg( cmp_toms(pp, p) <= 0,
 			 "pp " SPX_PROC_FMT REF_TAG_FMT
@@ -320,8 +320,8 @@ Datum CallMethod(CALLS_ Toms tom, Datum args[], bool *null_ret) {
 	CALL_LINK();
 	return (
 		tom->method->readonly
-		? SpxQueryDatumType
-		: SpxUpdateDatumType
+		? SpxQueryDatum
+		: SpxUpdateDatum
 	) (	CALL_ tom->plan, args, 0, null_ret  );
 }
 
@@ -649,7 +649,7 @@ static TocCachePtr LoadTocs(_CALLS_) {
 	SpxPlan0( CALL_ &plan, select );
 	struct toc_cache toc;
 	toc.size = SpxQueryDB(plan, NULL, REF_MAX_TAG);
-	toc.max_tag = RowColInt32(CALL_ 0, maxtag_, Ref_Tags_Type, 0);
+	toc.max_tag = RowColTypedInt32(CALL_ 0, maxtag_, Ref_Tags_Type, 0);
 	if (toc.size != toc.max_tag + 1) {
 		CALL_WARN_OUT(
 									"toc.size: %d max_tag+1:  %d",
@@ -690,7 +690,7 @@ static TocCachePtr LoadTocs(_CALLS_) {
 	
 	Assert_SpxObjPtr_AtEnd( CALL_ cache, toc_cache_by_class_type_end(cache) );
 	for (int row = 0; row < toc.size; row++) {  // load rows
-		const int tag = RowColInt32(CALL_ row, tag_, Ref_Tags_Type, 0);
+		const int tag = RowColTypedInt32(CALL_ row, tag_, Ref_Tags_Type, 0);
 		CallAssert(tag >= 0 && tag <= toc.max_tag);
 		Assert_SpxObjPtr_In(CALL_ cache, by_type);
 		Assert_SpxObjPtr_In(CALL_ cache, by_class);
@@ -698,19 +698,19 @@ static TocCachePtr LoadTocs(_CALLS_) {
 		Assert_SpxObjPtr_In(CALL_ cache, toc);
 		toc->tag = tag;
 		// CALL_DEBUG_OUT("row %d toc tag %d", row, toc->tag);
-		toc->table = RowColOid(CALL_ row, class_, Class_Type, 0);
+		toc->table = RowColTypedOid(CALL_ row, class_, Class_Type, 0);
 		toc->type = SpxTypeByOid(CALL_
-			RowColOid(CALL_ row, type_, Type_Type, 0)
+			RowColTypedOid(CALL_ row, type_, Type_Type, 0)
 		);
 		bool no_out_proc;
 		const Oid out_proc =
-			RowColOid(CALL_ row, out_, Procedure_Type, &no_out_proc);
+			RowColTypedOid(CALL_ row, out_, Procedure_Type, &no_out_proc);
 		toc->out = no_out_proc ? 0 : SpxProcByOid(CALL_ out_proc);
 		bool no_in_proc;
 		const Oid in_proc =
-			RowColOid(CALL_ row, in_, Procedure_Type, &no_in_proc);
+			RowColTypedOid(CALL_ row, in_, Procedure_Type, &no_in_proc);
 		toc->in = no_in_proc ? 0 : SpxProcByOid(CALL_ in_proc);
-		toc->num_ops = RowColInt32(CALL_ row, numops_, Int32_Type, 0);
+		toc->num_ops = RowColTypedInt32(CALL_ row, numops_, Int32_Type, 0);
 	}
 	Assert_SpxObjPtr_AtEnd( CALL_ cache, by_class );
 	qsort(

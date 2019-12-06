@@ -429,12 +429,11 @@ typedef struct spx_type *TypePtrs;
 typedef struct spx_proc *ProcPtrs;
 
 static size_t SchemaNameDelim(
-	CALLS_ char *const dst, size_t const size,
+	char *const dst, size_t const size,
 	const SpxSchemas s, const Str name, const char d
 ) {
-	CALLS_LINK();
 #if 0
-	// crashes server!
+	// crashes server!!!
 	const size_t len = snprintf(dst, size, "%s.%s%c", s->name, name, d);
 #else
 	const size_t len = snprintf(dst, size, "%s%c", name, d);
@@ -447,7 +446,7 @@ static size_t AddSchemaNameDelim(
 	const SpxSchemas s, const Str name, const char d
 ) {
 	CALL_LINK();
-	const size_t len = SchemaNameDelim(CALL_ *dst, *size, s, name, d);
+	const size_t len = SchemaNameDelim(*dst, *size, s, name, d);
 	if (*dst) {
 		if (len < *size) {
 			*dst += len; *size -= len;
@@ -528,11 +527,11 @@ static TypePtrs spx_type_end(CALLS_ TypePtrs p, int name_size) {
 	CallAssert( len <= name_size );
 	CallAssert( spx_aligned_size(len) == name_size );
 	if ( DebugLevel() > 1 ) {	// yes, this can be made MUCH simpler!
-		char buf[ 1 + SchemaNameDelim(CALL_ 0, 0, p->schema, p->name, ' ') ];
+		char buf[ 1 + SchemaNameDelim(0, 0, p->schema, p->name, ' ') ];
 		CALL_DEBUG_OUT( C_SIZE_FMT(sizeof buf), C_SIZE_VAL(sizeof buf) );
 		CallAssert( sizeof buf == 1 + SchemaNameDelim(
-	CALL_ buf, sizeof buf, p->schema, p->name, ' '
-		)	);
+			buf, sizeof buf, p->schema, p->name, ' '
+		));
 		CALL_DEBUG_OUT("passed %s", buf );
 	}
 	return (TypePtrs) ( (char *) (p+1) + name_size );
@@ -598,7 +597,7 @@ static SpxSchemaPath LoadSchemaPath(_CALLS_) {
 	SpxSchemas *path_ptr = sp->path;
 	int row;
 	for (row = 0; row < num_rows; row++) {
-		const int id = RowColTypInt32(CALL_ row, id_, Int32_Type, NULL);
+		const int id = RowColTypedInt32(CALL_ row, id_, Int32_Type, NULL);
 		// CALL_DEBUG_OUT("row %d schema id %d", row, id);
 		CallAssertMsg( id >= sp->schema_cache->min_id,
 			"id %d, min_id %d", id, sp->schema_cache->min_id );
@@ -626,7 +625,7 @@ extern int SpxLoadSchemaPath(_CALLS_) {
 static SpxSchemaCache LoadSchemas(_CALLS_) {
 	enum schema_fields {	id_, name_, oid_, name_len_ };
 	static const char select_schemas[] = "SELECT DISTINCT"
-		" id::integer, schema_name, schema_oid, schema_name_len"
+		" id::int4, schema_name::text, schema_oid, schema_name_len::int4"
 		" FROM s0_lib.schema_view"
 		" ORDER BY schema_name";
 	CALL_LINK();
@@ -634,13 +633,13 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 	static SpxPlans plan;
 	SpxPlan0( CALL_ &plan, select_schemas);
 	const int num_rows = SpxQueryDB(plan, NULL, MAX_SCHEMAS);
-	int min_id = RowColTypInt32(CALL_ 0, id_, Int32_Type, NULL);
+	int min_id = RowColTypedInt32(CALL_ 0, id_, Int32_Type, NULL);
 	int max_id = 0;
 	size_t sum_text = 0;
 	int row;
 	for (row = 0; row < num_rows; row++) {
-		const int id =  RowColTypInt32(CALL_ 0, id_, Int32_Type, NULL);
-		const int name_len = RowColTypInt32(CALL_ 0, name_len_, Int32_Type, NULL);
+		const int id =  RowColTypedInt32(CALL_ row, id_, Int32_Type, NULL);
+		const int name_len = RowColTypedInt32(CALL_ row, name_len_, Int32_Type, NULL);
 		if (id < min_id) min_id = id;
 		if (id > max_id) max_id = id;
 		sum_text += spx_aligned_size(name_len+1);
@@ -648,10 +647,10 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 	const int by_id_len = max_id + 1;
 	const SchemaCachePtr cache = spx_obj_alloc(
 	sizeof *cache
-	+ by_id_len * sizeof *cache->by_id
-	+ num_rows * sizeof spx_schema_cache_by_name(cache)
-	+ num_rows * sizeof spx_schema_cache_by_oid(cache)
-	+ num_rows * sizeof **cache->by_id
+	+ by_id_len * sizeof *cache->by_id	// schema ptr
+	+ num_rows * sizeof *cache->by_id	// schema ptr
+	+ num_rows * sizeof *cache->by_id	// schema ptr
+	+ num_rows * sizeof **cache->by_id	// schema structure
 	+ sum_text
 	);
 	CallAssert(cache);
@@ -663,16 +662,16 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 	Schemas p = (Schemas) spx_schema_cache_schemas(cache);
 	size_t sum_text_too = 0;
 	for (row = 0; row < num_rows; row++) {
-		p->id = RowColTypInt32(CALL_ row, id_, Int32_Type, NULL);
+		p->id = RowColTypedInt32(CALL_ row, id_, Int32_Type, NULL);
 		CallAssertMsg( p->id >= 0 && p->id <= max_id,
 			"row %d bad schema id %d", row, p->id );
 		bool oid_is_null;
-		p->oid = RowColOid(CALL_ row, oid_, Oid_Type, &oid_is_null);
+		p->oid = RowColTypedOid(CALL_ row, oid_, Oid_Type, &oid_is_null);
 		if (oid_is_null) {
 			CALL_WARN_OUT("Schema id %d has no OID yet!", p->id);
 			p->oid = 0;
 		}
-		const int name_len = RowColTypInt32(CALL_ 0, name_len_, Int32_Type, NULL);
+		const int name_len = RowColTypedInt32(CALL_ row, name_len_, Int32_Type, NULL);
 		sum_text_too += spx_aligned_size(name_len+1);
 		/* Method one: Get the name as a text dataum and copy it
 			 into place with */
@@ -682,10 +681,12 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 		// We're NOT using our SPX api though!!
 		{
 			bool is_null;
-			const Datum name_datum = SPI_getbinval(
-				SPI_tuptable->vals[row], SPI_tuptable->tupdesc, name_, &is_null );
+			const Datum name_datum = RowColTypedDatum(CALL_ row, name_, Text_Type, &is_null);
+			// const Datum name_datum = SPI_getbinval(
+			// 	SPI_tuptable->vals[row], SPI_tuptable->tupdesc, name_, &is_null );
 			text *const name_text = DatumGetTextPP(name_datum);
 			text_to_cstring_buffer(name_text, p->name, name_len+1);
+			CALL_DEBUG_OUT("==> %s via getbinval", p->name);
 		}
 		// Verify with method two, using SPI_getvalue (underlyingly):
 		{
@@ -699,8 +700,10 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 		}
 		cache->by_id[p->id] = *name_p++ =  *oid_p++ = p;
 		p = spx_schema_next(p);
-		if ( p->id >= max_id )
-			Assert_SpxObjPtr_AtEnd(CALL_ cache, p);
+		// Why is the last id max_id when the data is sorted by schema_name ??
+		// If it is, this code is correct, yet fragile and unnecessary??
+		// if ( p->id >= max_id )
+		//	Assert_SpxObjPtr_AtEnd(CALL_ cache, p);
 	}
 	if ( sum_text != sum_text_too )
 		CALL_WARN_OUT("sum_text %zu != %zu", sum_text, sum_text_too);
@@ -864,7 +867,7 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 	};
 	const int num_rows = SpxQueryDB(plan, NULL, MAX_TYPES);
 	// CALL_DEBUG_OUT("num_rows %d", num_rows);
-	const int64 sum_text = RowColTypInt64(CALL_ 0, sum_text_, Int64_Type, NULL);
+	const int64 sum_text = RowColTypedInt64(CALL_ 0, sum_text_, Int64_Type, NULL);
 	// CALL_DEBUG_OUT("sum_text %ld", sum_text);
 	int64 name_size_sum = 0;
 	TypePtrs p;
@@ -884,17 +887,17 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 	int row;
 	for (row = 0; row < num_rows; row++) {
 		bool is_null;
-		p->oid = RowColOid(CALL_ row, oid_, Type_Type, &is_null);
+		p->oid = RowColTypedOid(CALL_ row, oid_, Type_Type, &is_null);
 		if (is_null)
 			CALL_BUG_OUT("row %d oid vey is null", row);
 		else
 			CALL_DEBUG_OUT("row %d oid %d", row, p->oid);
 		CallAssert(p->schema = SpxSchemaById(
-			 CALL_ RowColTypInt32(CALL_ row, schema_id_, Int32_Type, 0)
+			 CALL_ RowColTypedInt32(CALL_ row, schema_id_, Int32_Type, 0)
 		) );
-		p->len = RowColTypInt32(CALL_ row, typlen_, Int32_Type, NULL);
+		p->len = RowColTypedInt32(CALL_ row, typlen_, Int32_Type, NULL);
 		p->by_value = RowColBool(CALL_ row, typbyval_, NULL);
-		const int name_size = RowColTypInt32(CALL_ row, name_size_, Int32_Type, NULL);
+		const int name_size = RowColTypedInt32(CALL_ row, name_size_, Int32_Type, NULL);
 		// Tmp -> Session Yes???
 		const TmpStrPtr s = RowColStr(CALL_ row, name_, SessionAlloc);
 		CallAssert(strlen(s) < name_size);
@@ -1177,7 +1180,7 @@ static int RowColOidVector(
 	CALLS_ const int row, const int col, Oid *dst, const int max_len
 ) {
 	CALL_LINK();
-	const Datum d = RowColDatum(CALL_ row, col, Oid_Vector_Type, 0);
+	const Datum d = RowColTypedDatum(CALL_ row, col, Oid_Vector_Type, 0);
 	ArrayType *const atp = DatumGetArrayTypeP(d);
 	CallAssert(ARR_NDIM(atp) == 1);
 	CallAssert(!ARR_HASNULL(atp));
@@ -1229,8 +1232,8 @@ static SpxProcCache LoadProcs(_CALLS_) {
 			name_size_, sum_text_, sum_nargs_		};
 	//  const int prior_debug_level = DebugSetLevel(3);
 	const int num_rows = SpxQueryDB(plan, NULL, MAX_PROCS);
-	const int sum_text = RowColTypInt64(CALL_ 0, sum_text_, Int64_Type, 0);
-	const int sum_nargs=RowColTypInt64(CALL_ 0, sum_nargs_, Int64_Type, 0);
+	const int sum_text = RowColTypedInt64(CALL_ 0, sum_text_, Int64_Type, 0);
+	const int sum_nargs=RowColTypedInt64(CALL_ 0, sum_nargs_, Int64_Type, 0);
 	int name_size_accum = 0, max_args_accum = 0;
 	ProcPtrs p;
 	const ProcCachePtr cache = spx_obj_alloc(
@@ -1248,16 +1251,16 @@ static SpxProcCache LoadProcs(_CALLS_) {
 		*by_oid = spx_proc_cache_by_oid(cache);
 	p = procs_cache_procs(cache);
 	for (int row = 0; row < num_rows; row++) {
-		p->oid = RowColOid(CALL_ row, oid_, Procedure_Type, 0);
+		p->oid = RowColTypedOid(CALL_ row, oid_, Procedure_Type, 0);
 		CallAssert( p->schema = SpxSchemaById( CALL_
-	RowColTypInt32(CALL_ row, schema_id_, Int32_Type, 0)  ) );
+	RowColTypedInt32(CALL_ row, schema_id_, Int32_Type, 0)  ) );
 		CallAssert( p->return_type = SpxTypeByOid( CALL_
-	RowColOid(CALL_ row, rettype_, Type_Type, 0)  ) );
+	RowColTypedOid(CALL_ row, rettype_, Type_Type, 0)  ) );
 		p->readonly = RowColBool(CALL_ row, readonly_, NULL);
-		p->min_args = RowColTypInt32(CALL_ row, minargs_, Int32_Type, NULL);
-		p->max_args = RowColTypInt32(CALL_ row, maxargs_, Int32_Type, NULL);
+		p->min_args = RowColTypedInt32(CALL_ row, minargs_, Int32_Type, NULL);
+		p->max_args = RowColTypedInt32(CALL_ row, maxargs_, Int32_Type, NULL);
 		CallAssert( ( max_args_accum += p->max_args ) <= sum_nargs );
-		const int name_size = RowColTypInt32(CALL_ row, name_size_, Int32_Type, NULL);
+		const int name_size = RowColTypedInt32(CALL_ row, name_size_, Int32_Type, NULL);
 		CallAssert( ( name_size_accum += name_size ) <= sum_text );
 		// Tmp -> Session Yes???
 		strcpy( spx_proc_name(p), RowColStr(CALL_ row, name_, SessionAlloc) );
@@ -1505,7 +1508,7 @@ static int ResolveSchema(CALLS_ int col, int num_oids) {
 	Oid oid;
 	int row, best_row = -1;
 	for (row = 0; row < num_oids; row++) {
-		oid = RowColOid(CALL_ row, col, Oid_Type, NULL);
+		oid = RowColTypedOid(CALL_ row, col, Oid_Type, NULL);
 		// CALL_DEBUG_OUT("Candidate schema %d", oid );
 		for (p = Spx_Schema_Path->path; p < best; p++) {
 			CALL_DEBUG_OUT("Path schema %d", (*p)->oid );
@@ -1740,18 +1743,9 @@ extern void SpxPlanNvargs(
 	}
 }
 
-static StrPtr StrValueSPX(
-	CALLS_ HeapTuple row, TupleDesc rowdesc, const int col
-) {
-	CALLS_LINK();
-	char *const s1 = SPI_getvalue(row,  rowdesc, col+1);
-
-	return s1;
-}
-
 // col is 0-based in Spx, 1-based in SPI!
 // If it might return NULL, is_null_ret must not be null!
-extern Datum RowColDatumType( CALLS_ const int row, const int col,
+extern Datum RowColDatum( CALLS_ const int row, const int col,
 					 SpxTypeOids *type_ret, bool *is_null_ret ) {
 	const int col1 = col+1;
 	CALL_LINK();
@@ -1782,11 +1776,11 @@ extern Datum RowColDatumType( CALLS_ const int row, const int col,
 
 // col is 0-based in Spx, 1-based in SPI!
 // If it might return NULL, is_null_ret must not be null!
-extern Datum RowColDatum( CALLS_ int row, int col,
+extern Datum RowColTypedDatum( CALLS_ int row, int col,
 			 SpxTypeOids expected_type, bool *is_null_ret ) {
 	CALL_LINK();
 	SpxTypeOids result_type;
-	const Datum d = RowColDatumType(CALL_ row, col, &result_type, is_null_ret);
+	const Datum d = RowColDatum(CALL_ row, col, &result_type, is_null_ret);
 	CallAssertMsg(
 		result_type.type_oid == expected_type.type_oid,
 		"row %d, col %d, result_type %d, expected_type %d",
@@ -1798,8 +1792,8 @@ extern Datum RowColDatum( CALLS_ int row, int col,
 extern int32 RowColInt32( CALLS_ int row, int col,
 					 SpxTypeOids *result_type_ret, bool *is_null_ret ) {
 	CALL_LINK();
-	const Datum d = RowColDatumType(CALL_ row, col, result_type_ret, is_null_ret);
-	CALL_DEBUG_OUT( "Returning %d", DatumGetInt32(d) );
+	const Datum d = RowColDatum(CALL_ row, col, result_type_ret, is_null_ret);
+	CALL_DEBUG_OUT( "==> %d", DatumGetInt32(d) );
 	return DatumGetInt32(d);
 }
 
@@ -1807,26 +1801,26 @@ extern int32 RowColInt32( CALLS_ int row, int col,
 extern int64 RowColInt64( CALLS_ int row, int col,
 					 SpxTypeOids *result_type_ret, bool *is_null_ret ) {
 	CALL_LINK();
-	const Datum d = RowColDatumType(CALL_ row, col, result_type_ret, is_null_ret);
-	CALL_DEBUG_OUT( "Returning %ld", DatumGetInt64(d) );
+	const Datum d = RowColDatum(CALL_ row, col, result_type_ret, is_null_ret);
+	CALL_DEBUG_OUT( "==> %ld", DatumGetInt64(d) );
 	return DatumGetInt64(d);
 }
 
-extern int32 RowColTypInt32(
+extern int32 RowColTypedInt32(
 	CALLS_ int row, int col, SpxTypeOids expected, bool *is_null_ret
 ) {
 	CALL_LINK();
-	const Datum d = RowColDatum(CALL_ row, col, expected, is_null_ret);
-	CALL_DEBUG_OUT( "Returning %d", DatumGetInt32(d) );
+	const Datum d = RowColTypedDatum(CALL_ row, col, expected, is_null_ret);
+	CALL_DEBUG_OUT( "==> %d", DatumGetInt32(d) );
 	return DatumGetInt32(d);
 }
 
-extern int64 RowColTypInt64(
+extern int64 RowColTypedInt64(
 	CALLS_ int row, int col, SpxTypeOids expected, bool *is_null_ret
 ) {
 	CALL_LINK();
-	const Datum d = RowColDatum(CALL_ row, col, expected, is_null_ret);
-	CALL_DEBUG_OUT( "Returning %ld", DatumGetInt64(d) );
+	const Datum d = RowColTypedDatum(CALL_ row, col, expected, is_null_ret);
+	CALL_DEBUG_OUT( "==> %ld", DatumGetInt64(d) );
 	return DatumGetInt64(d);
 }
 
@@ -1853,8 +1847,8 @@ extern int64 RowColIfInt64(
 
 extern bool RowColBool(CALLS_ int row, int col, bool *is_null_ret) {
 	CALL_LINK();
-	const Datum d = RowColDatum(CALL_ row, col, Bool_Type, is_null_ret);
-	CALL_DEBUG_OUT( "Returning %s", DatumGetBool(d) ? "true" : "false" );
+	const Datum d = RowColTypedDatum(CALL_ row, col, Bool_Type, is_null_ret);
+	CALL_DEBUG_OUT( "==> %s", DatumGetBool(d) ? "true" : "false" );
 	return DatumGetBool(d);
 }
 
@@ -1864,47 +1858,48 @@ extern Oid RowColOid( CALLS_ int row, int col,
 	CALL_LINK();
 	bool is_null, *const is_null_ptr = is_null_ret ?: &is_null;
 	SpxTypeOids result_type, *const result_type_ptr = result_type_ret ?: &result_type;
-	const Datum d = RowColDatumType(CALL_ row, col, result_type_ptr, is_null_ptr);
+	const Datum d = RowColDatum(CALL_ row, col, result_type_ptr, is_null_ptr);
 	CallAssert(!*is_null_ptr || is_null_ret);
 	if (*is_null_ptr)
-		CALL_DEBUG_OUT( "Returning NULL" );
+		CALL_DEBUG_OUT( "==> NULL" );
 	else
-		CALL_DEBUG_OUT( "Returning %d::%d",
+		CALL_DEBUG_OUT( "==> %d::%d",
 										(int) DatumGetObjectId(d), (int) result_type.type_oid );
 	return *is_null_ptr ? 0 : DatumGetObjectId(d);
 }
 
 // Experimenting with handling NULLs more explicitly!!
-extern Oid RowColOid(
+extern Oid RowColTypedOid(
 	CALLS_ int row, int col, SpxTypeOids expected, bool *is_null_ret
 ) {
 	CALL_LINK();
 	bool is_null, *const is_null_ptr = is_null_ret ?: &is_null;
-	const Datum d = RowColDatum(CALL_ row, col, expected, is_null_ptr);
+	const Datum d = RowColTypedDatum(CALL_ row, col, expected, is_null_ptr);
 	CallAssert(!*is_null_ptr || is_null_ret);
 	if (*is_null_ptr)
-		CALL_DEBUG_OUT( "Returning NULL" );
+		CALL_DEBUG_OUT( "==> NULL" );
 	else
-		CALL_DEBUG_OUT( "Returning %d", (int) DatumGetObjectId(d) );
+		CALL_DEBUG_OUT( "==> %d", (int) DatumGetObjectId(d) );
 	return *is_null_ptr ? 0 : DatumGetObjectId(d);
 }
 
 extern StrPtr RowColStrPtr(CALLS_ int row, int col) {
 	CALL_LINK();
+	AssertSPX(_CALL_);
 /*
  * NULL if the column is null, colnumber is out of range (SPI_result is
  * set to SPI_ERROR_NOATTRIBUTE), or no no output function available
  * (SPI_result is set to SPI_ERROR_NOOUTFUNC)
 */
 	SPI_result = 0; // necessary???
-	const StrPtr s = StrValueSPX(
-		CALL_ SPI_tuptable->vals[row],  SPI_tuptable->tupdesc, col
+	const StrPtr s = SPI_getvalue(
+		SPI_tuptable->vals[row],  SPI_tuptable->tupdesc, col+1
 	);
 	CallAssertMsg( SPI_result != SPI_ERROR_NOATTRIBUTE,
 			 "%d, %d out of range", row, col );
 	CallAssertMsg(
 	SPI_result != SPI_ERROR_NOOUTFUNC, "row %d, col %d", row, col );
-	CALL_DEBUG_OUT( "Returning %s", s ?: "NULL" );
+	CALL_DEBUG_OUT( "==> %s", s ?: "NULL" );
 	return s;
 }
 
@@ -1962,24 +1957,24 @@ static void Update1(CALLS_ SpxPlans plan, Datum args[]) {
 }
 
 // execute a read-write query plan returning a datum or NULL result type 
-extern Datum SpxUpdateDatumType( CALLS_ SpxPlans plan, Datum args[],
+extern Datum SpxUpdateDatum( CALLS_ SpxPlans plan, Datum args[],
 	SpxTypeOids *result_type_ret, bool *is_null_ret
 ) {
 	CALLS_LINK();
 	Update1(CALL_ plan, args);
-	return RowColDatumType(CALL_ 0, 0, result_type_ret, is_null_ret);
+	return RowColDatum(CALL_ 0, 0, result_type_ret, is_null_ret);
 }
 
 // execute a read-write query plan returning a datum or NULL result type 
-extern Datum SpxUpdateDatum( CALLS_ SpxPlans plan, Datum args[],
+extern Datum SpxUpdateTypedDatum( CALLS_ SpxPlans plan, Datum args[],
 			SpxTypeOids expected, bool *is_null_ret ) {
 	CALLS_LINK();
 	Update1(CALL_ plan, args);
-	return RowColDatum(CALL_ 0, 0, expected, is_null_ret);
+	return RowColTypedDatum(CALL_ 0, 0, expected, is_null_ret);
 }
 
 // execute a query plan returning an oid
-extern Oid SpxUpdateTypeOid( CALLS_ SpxPlans plan, Datum args[],
+extern Oid SpxUpdateOid( CALLS_ SpxPlans plan, Datum args[],
 				SpxTypeOids *result_type_ret, bool *is_null_ret ) {
 	CALLS_LINK();
 	Update1(CALL_ plan, args);
@@ -1987,15 +1982,15 @@ extern Oid SpxUpdateTypeOid( CALLS_ SpxPlans plan, Datum args[],
 }
 
 // execute a query plan returning an oid
-extern Oid SpxUpdateOid( CALLS_ SpxPlans plan, Datum args[],
-		SpxTypeOids result_type, bool *is_null_ret ) {
+extern Oid SpxUpdateTypedOid( CALLS_ SpxPlans plan, Datum args[],
+		SpxTypeOids expected, bool *is_null_ret ) {
 	CALLS_LINK();
 	Update1(CALL_ plan, args);
-	return RowColOid(CALL_ 0, 0, result_type, is_null_ret);
+	return RowColTypedOid(CALL_ 0, 0, expected, is_null_ret);
 }
 
 // execute a query plan returning an integer
-extern int32 SpxUpdateTypeInt32(
+extern int32 SpxUpdateInt32(
 	CALLS_ SpxPlans plan, Datum args[],
 	SpxTypeOids *result_type_ret, bool *is_null_ret
 ) {
@@ -2005,7 +2000,7 @@ extern int32 SpxUpdateTypeInt32(
 }
 
 // execute a query plan returning an integer
-extern int64 SpxUpdateTypeInt64(
+extern int64 SpxUpdateInt64(
 	CALLS_ SpxPlans plan, Datum args[],
 	SpxTypeOids *result_type_ret, bool *is_null_ret
 ) {
@@ -2015,19 +2010,19 @@ extern int64 SpxUpdateTypeInt64(
 }
 
 // execute a query plan returning an integer
-extern int32 SpxUpdateInt32( CALLS_ SpxPlans plan, Datum args[],
-			SpxTypeOids result_type, bool *is_null_ret ) {
+extern int32 SpxUpdateTypedInt32( CALLS_ SpxPlans plan, Datum args[],
+			SpxTypeOids expected, bool *is_null_ret ) {
 	CALLS_LINK();
 	Update1(CALL_ plan, args);
-	return RowColTypInt32(CALL_ 0, 0, result_type, is_null_ret);
+	return RowColTypedInt32(CALL_ 0, 0, expected, is_null_ret);
 }
 
 // execute a query plan returning an integer
-extern int64 SpxUpdateInt64( CALLS_ SpxPlans plan, Datum args[],
-			SpxTypeOids result_type, bool *is_null_ret ) {
+extern int64 SpxUpdateTypedInt64( CALLS_ SpxPlans plan, Datum args[],
+			SpxTypeOids expected, bool *is_null_ret ) {
 	CALLS_LINK();
 	Update1(CALL_ plan, args);
-	return RowColTypInt64(CALL_ 0, 0, result_type, is_null_ret);
+	return RowColTypedInt64(CALL_ 0, 0, expected, is_null_ret);
 }
 
 // execute a query plan returning an integer or NULL result_type or just 0 
@@ -2094,19 +2089,19 @@ static void Query1(CALLS_ SpxPlans plan, Datum args[]) {
 }
 
 // execute a readonly query plan returning a datum or NULL result type 
-extern Datum SpxQueryDatumType( CALLS_ SpxPlans plan, Datum args[],
+extern Datum SpxQueryDatum( CALLS_ SpxPlans plan, Datum args[],
 		SpxTypeOids *result_type_ret, bool *is_null_ret ) {
 	CALLS_LINK();
 	Query1(CALL_ plan, args);
-	return RowColDatumType(CALL_ 0, 0, result_type_ret, is_null_ret);
+	return RowColDatum(CALL_ 0, 0, result_type_ret, is_null_ret);
 }
 
 // execute a readonly query plan returning a datum or NULL result type 
-extern Datum SpxQueryDatum( CALLS_ SpxPlans plan, Datum args[],
+extern Datum SpxQueryTypedDatum( CALLS_ SpxPlans plan, Datum args[],
 			SpxTypeOids expected, bool *is_null_ret ) {
 	CALLS_LINK();
 	Query1(CALL_ plan, args);
-	return RowColDatum(CALL_ 0, 0, expected, is_null_ret);
+	return RowColTypedDatum(CALL_ 0, 0, expected, is_null_ret);
 }
 
 // execute a query plan returning a VarChar or NULL result_type
@@ -2119,7 +2114,7 @@ SpxQueryText(CALLS_ SpxPlans plan, Datum args[], ALLOCATOR_PTR(alloc)
 }
 
 // execute a query plan returning an oid
-extern Oid SpxQueryTypeOid( CALLS_ SpxPlans plan, Datum args[],
+extern Oid SpxQueryOid( CALLS_ SpxPlans plan, Datum args[],
 				SpxTypeOids *result_type_ret, bool *is_null_ret ) {
 	CALLS_LINK();
 	Query1(CALL_ plan, args);
@@ -2127,15 +2122,15 @@ extern Oid SpxQueryTypeOid( CALLS_ SpxPlans plan, Datum args[],
 }
 
 // execute a query plan returning an oid
-extern Oid SpxQueryOid( CALLS_ SpxPlans plan, Datum args[],
-		SpxTypeOids result_type, bool *is_null_ret ) {
+extern Oid SpxQueryTypedOid( CALLS_ SpxPlans plan, Datum args[],
+		SpxTypeOids expected, bool *is_null_ret ) {
 	CALLS_LINK();
 	Query1(CALL_ plan, args);
-	return RowColOid(CALL_ 0, 0, result_type, is_null_ret);
+	return RowColTypedOid(CALL_ 0, 0, expected, is_null_ret);
 }
 
 // execute a query plan returning an integer
-extern int32 SpxQueryTypeInt32(
+extern int32 SpxQueryInt32(
 	CALLS_ SpxPlans plan, Datum args[],
 	SpxTypeOids *result_type_ret, bool *is_null_ret
 ) {
@@ -2145,7 +2140,7 @@ extern int32 SpxQueryTypeInt32(
 }
 
 // execute a query plan returning an integer
-extern int64 SpxQueryTypeInt64(
+extern int64 SpxQueryInt64(
 	CALLS_ SpxPlans plan, Datum args[],
 	SpxTypeOids *result_type_ret, bool *is_null_ret
 ) {
@@ -2155,19 +2150,19 @@ extern int64 SpxQueryTypeInt64(
 }
 
 // execute a query plan returning an integer
-extern int32 SpxQueryInt32( CALLS_ SpxPlans plan, Datum args[],
-			SpxTypeOids result_type, bool *is_null_ret ) {
+extern int32 SpxQueryTypedInt32( CALLS_ SpxPlans plan, Datum args[],
+			SpxTypeOids expected, bool *is_null_ret ) {
 	CALLS_LINK();
 	Query1(CALL_ plan, args);
-	return RowColTypInt32(CALL_ 0, 0, result_type, is_null_ret);
+	return RowColTypedInt32(CALL_ 0, 0, expected, is_null_ret);
 }
 
 // execute a query plan returning an integer
-extern int64 SpxQueryInt64( CALLS_ SpxPlans plan, Datum args[],
-			SpxTypeOids result_type, bool *is_null_ret ) {
+extern int64 SpxQueryTypedInt64( CALLS_ SpxPlans plan, Datum args[],
+			SpxTypeOids expected, bool *is_null_ret ) {
 	CALLS_LINK();
 	Query1(CALL_ plan, args);
-	return RowColTypInt64(CALL_ 0, 0, result_type, is_null_ret);
+	return RowColTypedInt64(CALL_ 0, 0, expected, is_null_ret);
 }
 
 // execute a query plan returning an integer or NULL result_type or just 0 

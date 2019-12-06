@@ -626,8 +626,8 @@ static inline char *spx_proc_name(SpxProcs proc) {
 #define SPX_PROC_FMT_ FMT_LF_(proc, "%s.%s-" SPX_OID_FMT__)
 #define SPX_PROC_FMT FMT_LF(proc, "%s.%s-" SPX_OID_FMT__)
 #define SPX_PROC_VAL(proc)							\
-	(!(proc) ? "???" : !(proc)->schema ? "??" : StrOrQ((proc)->schema->name) , \
-	 StrOrQ(spx_proc_name((proc)))), (!(proc) ? "?" : (proc)->oid)
+	(!(proc) ? "???" : !(proc)->schema ? "??" : StrOrQ((proc)->schema->name)) , \
+	 StrOrQ(spx_proc_name((proc))), (!(proc) ? 0 : (proc)->oid)
 
 #else
 
@@ -1159,15 +1159,15 @@ int SpxAccessDB(CALLS_ SpxPlans plan, Datum args[], int nrows, bool readonly);
 
 /* Execute a read-write query plan returning the result, if any */
 
-Datum SpxUpdateDatumType(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
-Datum SpxUpdateDatum(CALLS_ SpxPlans, Datum args[], SpxTypeOids result_type, bool *null_ret);
+Datum SpxUpdateDatum(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
+Datum SpxUpdateTypedDatum(CALLS_ SpxPlans, Datum args[], SpxTypeOids expected, bool *null_ret);
 
-Oid SpxUpdateTypeOid(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
-Oid SpxUpdateOid(CALLS_ SpxPlans, Datum args[], SpxTypeOids result_type, bool *null_ret);
-int32 SpxUpdateTypeInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
-int64 SpxUpdateTypeInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
-int32 SpxUpdateInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids result_type, bool *null_ret);
-int64 SpxUpdateInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids result_type, bool *null_ret);
+Oid SpxUpdateOid(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
+Oid SpxUpdateTypedOid(CALLS_ SpxPlans, Datum args[], SpxTypeOids expected, bool *null_ret);
+int32 SpxUpdateInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
+int64 SpxUpdateInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
+int32 SpxUpdateTypedInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids expected, bool *null_ret);
+int64 SpxUpdateTypedInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids expected, bool *null_ret);
 int32 SpxUpdateIfInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids *, int32 or_else);
 int64 SpxUpdateIfInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids *, int64 or_else);
 #if 0
@@ -1200,14 +1200,14 @@ SpxText SpxUpdateText(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
 	 Passing a null pointer for an null_return means that
 	 a error will be thrown on a null result.
 */
-Datum RowColDatumType(CALLS_ int row, int col, SpxTypeOids *type_ret, bool *null_ret);
-Datum RowColDatum(CALLS_ int row, int col, SpxTypeOids result_type, bool *null_ret);
+Datum RowColDatum(CALLS_ int row, int col, SpxTypeOids *type_ret, bool *null_ret);
+Datum RowColTypedDatum(CALLS_ int row, int col, SpxTypeOids expected, bool *null_ret);
 Oid RowColOid(CALLS_ int row, int col, SpxTypeOids *type_ret, bool *null_ret);
-Oid RowColOid(CALLS_ int row, int col, SpxTypeOids result_type, bool *null_ret);
+Oid RowColTypedOid(CALLS_ int row, int col, SpxTypeOids expected_type, bool *null_ret);
 int32 RowColInt32(CALLS_ int row, int col, SpxTypeOids *type_ret, bool *null_ret);
 int64 RowColInt64(CALLS_ int row, int col, SpxTypeOids *type_ret, bool *null_ret);
-int32 RowColTypInt32(CALLS_ int row, int col, SpxTypeOids result_type, bool *null_ret);
-int64 RowColTypInt64(CALLS_ int row, int col, SpxTypeOids result_type, bool *null_ret);
+int32 RowColTypedInt32(CALLS_ int row, int col, SpxTypeOids expected, bool *null_ret);
+int64 RowColTypedInt64(CALLS_ int row, int col, SpxTypeOids expected, bool *null_ret);
 #if 0
 int32 RowColIfTypeInt32(CALLS_ int row,int col,SpxTypeOids *type_ret, int32 or_else);
 int64 RowColIfTypeInt64(CALLS_ int row, int col, SpxTypeOids *type_ret, int64 or_else);
@@ -1219,14 +1219,14 @@ SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc));
 
 /* Execute a read-only query plan returning the result, if any */
 
-Datum SpxQueryDatumType(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
-Datum SpxQueryDatum(CALLS_ SpxPlans, Datum args[], SpxTypeOids result_type, bool *null_ret);
-Oid SpxQueryTypeOid(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
-Oid SpxQueryOid(CALLS_ SpxPlans, Datum args[], SpxTypeOids result_type, bool *null_ret);
-int32 SpxQueryTypeInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
-int64 SpxQueryTypeInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
-int32 SpxQueryInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids result_type, bool *null_ret);
-int64 SpxQueryInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids result_type, bool *null_ret);
+Datum SpxQueryDatum(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
+Datum SpxQuerydDatum(CALLS_ SpxPlans, Datum args[], SpxTypeOids expected, bool *null_ret);
+Oid SpxQueryOid(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
+Oid SpxQueryTypedOid(CALLS_ SpxPlans, Datum args[], SpxTypeOids expected, bool *null_ret);
+int32 SpxQueryInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
+int64 SpxQueryInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids *type_ret, bool *null_ret);
+int32 SpxQueryTypedInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids expected, bool *null_ret);
+int64 SpxQueryTypedInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids expected, bool *null_ret);
 int32 SpxQueryIfInt32(CALLS_ SpxPlans, Datum args[], SpxTypeOids *, int32 or_else);
 int64 SpxQueryIfInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids *, int64 or_else);
 #if 0
