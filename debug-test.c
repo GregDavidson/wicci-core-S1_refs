@@ -25,7 +25,7 @@ int main() {
   _Static_assert(1 + 1 == 2, "debug features");
   DebugSetOn();
   // debug-log and debug features
-  DebugLevel > 0 && WARN_OUT("This is your last warning.");
-  DebugLevel > 0 && BUG_OUT("This should be an error.");
+  if ( DebugLevel > 0 )  WARN_OUT("This is your last warning.");
+  if ( DebugLevel > 0 ) BUG_OUT("This should be an error.");
   return 0;
 }
