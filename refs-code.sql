@@ -435,10 +435,10 @@ AS 'spx.so' LANGUAGE c;
 
 CREATE OR REPLACE
 FUNCTION refs_ready() RETURNS regprocedure[] AS $$
-	SELECT spx_ready() || ARRAY[
+	SELECT spx_ready || ARRAY[
 		'unsafe_refs_load_toms()',	'unsafe_refs_load_tocs()'
 	]::regprocedure[] FROM
-		unsafe_refs_load_toms(), unsafe_refs_load_tocs(), unsafe_refs_initialize()
+		spx_ready(), unsafe_refs_load_toms(), unsafe_refs_load_tocs(), unsafe_refs_initialize()
 $$ LANGUAGE sql;
 COMMENT ON FUNCTION refs_ready() IS '
 	Ensure that all modules of the refs schema
