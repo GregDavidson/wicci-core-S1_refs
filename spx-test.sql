@@ -30,10 +30,6 @@ SELECT set_file('spx-test.sql', '$Id');
 
 -- SELECT unsafe_spx_load_schemas();
 
--- TABLE schema_path_by_id;
-
--- SELECT unsafe_spx_load_schema_path();
-
 -- SELECT spx_debug_schemas();
 
 -- TABLE our_types;
@@ -43,8 +39,6 @@ SELECT set_file('spx-test.sql', '$Id');
 -- SELECT spx_debug_types();
 
 -- TABLE schema_view;
-
--- TABLE schema_path_by_id;
 
 -- TABLE our_types ORDER BY name_;
 
@@ -69,9 +63,6 @@ SELECT set_file('spx-test.sql', '$Id');
 -- SELECT declare_proc(p.oid) FROM pg_proc p, pg_namespace n
 -- WHERE pronamespace = n.oid AND nspname='sql'
 -- AND pronargs > 0 AND prorettype = 'text'::regtype AND proname LIKE 'xml_%';
-
--- SELECT DISTINCT id_, name_, oid_ 
--- FROM s0_lib.schema_path_by_id;
 
 -- SELECT DISTINCT 
 -- 	id_, name_, oid_, name_size_, min_id_, max_id_, sum_text_ 
