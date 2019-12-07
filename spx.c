@@ -20,7 +20,7 @@ static const char spx_version[] = "$Id: spx.c,v 1.3 2007/07/24 04:27:47 greg Exp
 #include <utils/hsearch.h>
 #include <utils/lsyscache.h>
 #define MODULE_TAG(name) spx_##name
-#include "debug.h"
+#include "debug-spx.h"
 #include "catalog/pg_type.h"
 #include <fmgr.h>		// for argument/result macros
 #include <ctype.h>
@@ -385,7 +385,7 @@ extern void SpxRequireTypes(CALLS_ SpxTypeOids *types, bool reinit) {
 
 const SpxText Spx_Null_Text = { 0 };
 
-int  spx_init__ = 0;
+// int  spx_init__ = 0;
 int spx_connected__ = 0;
 
 /* * Spx Schemas */
@@ -514,29 +514,6 @@ static ProcPtrs spx_proc_end(CALLS_ ProcPtrs p, int name_size) {
 	return (ProcPtrs) (spx_proc_name(p) + name_size);
 }
 
-/* p points to a fully initialized struct spx_type
- * the last field of which is its '\0'-terminated name
- * plus spx_align_size, of total size name_size
- * the next structure should begin after that name field
- * we also put LOTS of checking and debugging code here
-*/
-static TypePtrs spx_type_end(CALLS_ TypePtrs p, int name_size) {
-	CALL_LINK();
-	CallAssert( name_size % sizeof (int) == 0 );
-	const int len = strlen( p->name ) + 1;
-	CallAssert( len <= name_size );
-	CallAssert( spx_aligned_size(len) == name_size );
-	if ( DebugLevel() > 1 ) {	// yes, this can be made MUCH simpler!
-		char buf[ 1 + SchemaNameDelim(0, 0, p->schema, p->name, ' ') ];
-		CALL_DEBUG_OUT( C_SIZE_FMT(sizeof buf), C_SIZE_VAL(sizeof buf) );
-		CallAssert( sizeof buf == 1 + SchemaNameDelim(
-			buf, sizeof buf, p->schema, p->name, ' '
-		));
-		CALL_DEBUG_OUT("passed %s", buf );
-	}
-	return (TypePtrs) ( (char *) (p+1) + name_size );
-}
-
 SpxSchemaCache Spx_Schema_Cache;
 typedef struct spx_schema_cache *SchemaCachePtr;
 SpxSchemaPath Spx_Schema_Path;
@@ -621,8 +598,9 @@ extern int SpxLoadSchemaPath(_CALLS_) {
 static SpxSchemaCache LoadSchemas(_CALLS_) {
 	enum schema_fields {	id_, name_, oid_, name_len_ };
 	static const char select_schemas[] = "SELECT DISTINCT"
-		" id::int4, schema_name::text, schema_oid, schema_name_len::int4"
-		" FROM s0_lib.schema_view"
+		" id::int4, schema_name::text, oid, octet_length(schema_name)::int4"
+		" FROM our_schema_names"
+		" LEFT JOIN pg_namespace ON (schema_name = nspname)"
 		" ORDER BY schema_name";
 	CALL_LINK();
 	CALL_DEBUG_OUT("==> LoadSchemas");
@@ -636,6 +614,9 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 	for (row = 0; row < num_rows; row++) {
 		const int id =  RowColTypedInt32(CALL_ row, id_, Int32_Type, NULL);
 		const int name_len = RowColTypedInt32(CALL_ row, name_len_, Int32_Type, NULL);
+		/* const Datum name_datum = RowColTypedDatum(CALL_ row, name_, Text_Type, NULL); */
+		/* const int name_len_too = textoctetlen(name_datum); */
+		/* CallAssert(name_len == name_len_too); */
 		if (id < min_id) min_id = id;
 		if (id > max_id) max_id = id;
 		sum_text += spx_aligned_size(name_len+1);
@@ -682,13 +663,14 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 			// 	SPI_tuptable->vals[row], SPI_tuptable->tupdesc, name_, &is_null );
 			text *const name_text = DatumGetTextPP(name_datum);
 			text_to_cstring_buffer(name_text, p->name, name_len+1);
-			CALL_DEBUG_OUT("==> %s via getbinval", p->name);
+			CALL_DEBUG_OUT("--> %s via getbinval", p->name);
+			CallAssert( name_len == strlen(p->name) );
 		}
 		// Verify with method two, using SPI_getvalue (underlyingly):
 		{
 			char *s = RowColStrPtr(CALL_ row, name_);
-			if ( !strcmp(p->name, s) )
-				CALL_WARN_OUT("name %s != %s", p->name, s);
+			if ( strcmp(p->name, s) )
+				CALL_WARN_OUT("name '%s' != '%s'", p->name, s);
 			const int name_len_too = strlen(s);
 			if ( name_len != name_len_too )
 				CALL_WARN_OUT("name_len %d != %d", name_len, name_len_too);
@@ -696,11 +678,9 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 		}
 		cache->by_id[p->id] = *name_p++ =  *oid_p++ = p;
 		p = spx_schema_next(p);
-		// Why is the last id max_id when the data is sorted by schema_name ??
-		// If it is, this code is correct, yet fragile and unnecessary??
-		// if ( p->id >= max_id )
-		//	Assert_SpxObjPtr_AtEnd(CALL_ cache, p);
 	}
+	// Check our arithmetic on the allocation and incrementing:
+	Assert_SpxObjPtr_AtEnd(CALL_ cache, p);
 	if ( sum_text != sum_text_too )
 		CALL_WARN_OUT("sum_text %zu != %zu", sum_text, sum_text_too);
 	CALL_DEBUG_OUT("About to qsort the Schema Cache by_oid");
@@ -773,6 +753,7 @@ extern SpxSchemas SpxSchemaByName(CALLS_ StrPtr name) {
 	return SchemaByName(CALL_ name, Spx_Schema_Cache);
 }
 
+// For debugging only!!
 FUNCTION_DEFINE(unsafe_spx_load_schemas) {
 	CALL_BASE();
 	CALL_DEBUG_OUT("+unsafe_spx_load_schemas();");
@@ -783,6 +764,7 @@ FUNCTION_DEFINE(unsafe_spx_load_schemas) {
 	PG_RETURN_INT32(num_schemas);
 }
 
+// For debugging only!!
 FUNCTION_DEFINE(unsafe_spx_load_schema_path) {
 	CALL_BASE();
 	CALL_DEBUG_OUT("+unsafe_spx_load_schema_path();");
@@ -851,36 +833,35 @@ static inline void TypeCacheCheck(_CALLS_) {
 	SpxTypeCacheCheck(CALL_ Spx_Type_Cache);
 }
 
+// Compare with LoadSchemas above
 static SpxTypeCache LoadTypes(_CALLS_) {
  CALL_LINK();
 	CALL_DEBUG_OUT("==> LoadTypes");
 	static SpxPlans plan;
-	SpxPlan0(CALL_ &plan, "SELECT DISTINCT "
-		"oid_, name_, schema_id_::integer, typlen_, typbyval_, name_size_, sum_text_"
-	" FROM s1_refs.type_view ORDER BY name_");
+	SpxPlan0( CALL_ &plan, "SELECT DISTINCT"
+		" oid_, name_::text, schema_id_::int4,"
+		" typlen_::int4, typbyval_, octet_length(name_)::int4 as name_len_"
+		" FROM s1_refs.type_view__ ORDER BY name_" );
 	enum {
-		oid_, name_, schema_id_, typlen_, typbyval_, name_size_, sum_text_
+		oid_, name_, schema_id_, typlen_, typbyval_, name_len_
 	};
 	const int num_rows = SpxQueryDB(plan, NULL, MAX_TYPES);
-	// CALL_DEBUG_OUT("num_rows %d", num_rows);
-	const int64 sum_text = RowColTypedInt64(CALL_ 0, sum_text_, Int64_Type, NULL);
-	// CALL_DEBUG_OUT("sum_text %ld", sum_text);
-	int64 name_size_sum = 0;
-	TypePtrs p;
+	size_t name_size_sum = 0;
+	int row;
+	for (row = 0; row < num_rows; row++) {
+		const int name_len = RowColTypedInt32(CALL_ row, name_len_, Int32_Type, NULL);
+		name_size_sum += spx_aligned_size(name_len + 1);
+	}
+	TypePtrs p;			// We have 3 arrays of size TypePtrs all pointing into our arena
 	const TypeCachePtr cache = spx_obj_alloc(
-		sizeof *cache + num_rows * (
-	sizeof *cache->by_name
-	+ sizeof *spx_type_cache_by_oid(cache)
-	+ sizeof *p
-		) + sum_text
+		sizeof *cache	+	num_rows * (3 * sizeof p + sizeof *p) + name_size_sum
 	);
 	CallAssert(cache );
 	cache->schema_cache = Spx_Schema_Cache;
 	cache->schema_path = Spx_Schema_Path;
 	cache->size = num_rows;
-	p = (TypePtrs) (spx_type_cache_by_oid(cache) + num_rows);
+	p = (TypePtrs) spx_type_cache_types(cache);
 	SpxTypes *by_name = cache->by_name,  *by_oid = spx_type_cache_by_oid(cache);
-	int row;
 	for (row = 0; row < num_rows; row++) {
 		bool is_null;
 		p->oid = RowColTypedOid(CALL_ row, oid_, Type_Type, &is_null);
@@ -893,20 +874,22 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 		) );
 		p->len = RowColTypedInt32(CALL_ row, typlen_, Int32_Type, NULL);
 		p->by_value = RowColBool(CALL_ row, typbyval_, NULL);
-		const int name_size = RowColTypedInt32(CALL_ row, name_size_, Int32_Type, NULL);
-		// Tmp -> Session Yes???
-		const TmpStrPtr s = RowColStr(CALL_ row, name_, SessionAlloc);
-		CallAssert(strlen(s) < name_size);
-		name_size_sum += name_size;
-		CallAssert(name_size_sum <= sum_text);
-		strcpy(p->name, s);
-		*by_name++ =  *by_oid++ = p;
-		p = spx_type_end( CALL_ p, name_size );
+		const int name_len = RowColTypedInt32(CALL_ row, name_len_, Int32_Type, NULL);
+		const Datum name_datum = RowColTypedDatum(CALL_ row, name_, Text_Type, &is_null);
+		if (is_null) {
+			*p->name = '\0';
+			CALL_BUG_OUT("row %d name is null", row);
+		} else {
+			text *const name_text = DatumGetTextPP(name_datum);
+			text_to_cstring_buffer(name_text, p->name, name_len+1);
+			CALL_DEBUG_OUT("--> %s", p->name);
+			CallAssert( name_len == strlen(p->name) );
+		}
+		*by_name++ = *by_oid++ = p;
+		p = spx_type_next(p);
 	}
+	// Check our arithmetic on the allocation and incrementing:
 	Assert_SpxObjPtr_AtEnd( CALL_ cache, p );
-	CallAssert(name_size_sum == sum_text);
-	// qsort(	cache->by_name, 		cache->size,
-	//		sizeof *cache->by_name,	cmp_types_by_name );
 	CALL_DEBUG_OUT("about to qsort %d rows by oid", num_rows);
 	qsort(	spx_type_cache_by_oid(cache),		cache->size,
 		sizeof *spx_type_cache_by_oid(cache),	cmp_types_by_oid);
@@ -953,6 +936,7 @@ extern SpxTypes SpxTypeByName(CALLS_ StrPtr name) {
 	return TypeByName(CALL_ name, Spx_Type_Cache);
 }
 
+// For debugging only!!
 FUNCTION_DEFINE(unsafe_spx_load_types) {
 	CALL_BASE();
 	CALL_DEBUG_OUT("+unsafe_spx_load_types();");
@@ -1332,6 +1316,7 @@ extern SpxProcs SpxProcByName(CALLS_ StrPtr name) {
 	return ProcByName(CALL_ name, Spx_Proc_Cache);
 }
 
+// For debugging only!!
 FUNCTION_DEFINE(unsafe_spx_load_procs) {
 	CALL_BASE();
 	CALL_DEBUG_OUT("+unsafe_spx_load_procs();");
@@ -1342,6 +1327,7 @@ FUNCTION_DEFINE(unsafe_spx_load_procs) {
 	PG_RETURN_INT32(load_count);
 }
 
+// For debugging only!!
 // https://www.postgresql.org/docs/12/spi-examples.html
 FUNCTION_DEFINE(spx_test_select) {
     char *command;
@@ -1394,12 +1380,18 @@ extern struct spx_caches SpxCurrentCaches(void) {
 // we should check this!!!
 extern void SpxInitSPX(_CALLS_) {
 	CALL_LINK();
-	CALL_DEBUG_OUT("+");
+	CALL_DEBUG_OUT("==>");
+	CallAssert( setlocale(LC_COLLATE, 0) );
+	CALL_DEBUG_OUT("~~> SpxLoadSchemas");
 	SpxLoadSchemas(_CALL_);
+	CALL_DEBUG_OUT("~~> SpxLoadSchemaPath");
 	SpxLoadSchemaPath(_CALL_);
+	CALL_DEBUG_OUT("~~> SpxLoadTypes");
 	SpxLoadTypes(_CALL_);
+	CALL_DEBUG_OUT("~~> SpxLoadProcs");
 	SpxLoadProcs(_CALL_);
-	spx_init__ = 1;
+	Initialize();
+	CALL_DEBUG_OUT("<==");
 }
 
 // @pre( ! InSPX(_CALL_) at this level )
@@ -1413,17 +1405,15 @@ extern void SpxInit(_CALLS_) {
 	FinishSPX(CALL_ level);
 }
 
-#if 0
 FUNCTION_DEFINE(spx_init) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(0);
 	SpxInit(_CALL_);
-	Initialize();
 	// CallAssert(spx_version); // always true
 	PG_RETURN_CSTRING( NewStr(CALL_ spx_version, call_palloc) );
 }
-#endif
 
+// For debugging only!!
 /* Only call this AFTER ensuring that all
  spx initializations have been done, i.e.
 * spx_collate_locale()
@@ -1440,6 +1430,7 @@ FUNCTION_DEFINE(unsafe_spx_initialize) {
 	PG_RETURN_CSTRING( NewStr(CALL_ spx_version, call_palloc) );
 }
 
+// For debugging only!!
 FUNCTION_DEFINE(spx_collate_locale) {
 	CALL_BASE();
 	CALL_DEBUG_OUT("+spx_collate_locale();");
@@ -1524,7 +1515,9 @@ static int ResolveSchema(CALLS_ int col, int num_oids) {
 
 #ifndef NO_TEST_FRAME
 
+// For debugging only!!
 FUNCTION_DEFINE(spx_debug_schemas) {
+	extern SpxSchemaCache Spx_Schema_Cache;
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(0);
 	const SpxSchemaCache c = Spx_Schema_Cache;
@@ -1543,6 +1536,12 @@ FUNCTION_DEFINE(spx_debug_schemas) {
 		s->id, s->oid, s->name
 	);
 	CallAssert(s->id == id);
+		} else {
+			SpxSchemas s = Spx_Schema_Cache->by_id[id];
+			CALL_DEBUG_OUT(
+				"Schema id = %2d, name = %s",
+				s->id, s->name ?: "NULL"
+			);
 		}
 	}
 	CALL_DEBUG_OUT("Schemas By Oid:");
@@ -1789,7 +1788,7 @@ extern int32 RowColInt32( CALLS_ int row, int col,
 					 SpxTypeOids *result_type_ret, bool *is_null_ret ) {
 	CALL_LINK();
 	const Datum d = RowColDatum(CALL_ row, col, result_type_ret, is_null_ret);
-	CALL_DEBUG_OUT( "==> %d", DatumGetInt32(d) );
+	CALL_DEBUG_OUT( "--> %d", DatumGetInt32(d) );
 	return DatumGetInt32(d);
 }
 
@@ -1798,7 +1797,7 @@ extern int64 RowColInt64( CALLS_ int row, int col,
 					 SpxTypeOids *result_type_ret, bool *is_null_ret ) {
 	CALL_LINK();
 	const Datum d = RowColDatum(CALL_ row, col, result_type_ret, is_null_ret);
-	CALL_DEBUG_OUT( "==> %ld", DatumGetInt64(d) );
+	CALL_DEBUG_OUT( "--> %ld", DatumGetInt64(d) );
 	return DatumGetInt64(d);
 }
 
@@ -1807,7 +1806,7 @@ extern int32 RowColTypedInt32(
 ) {
 	CALL_LINK();
 	const Datum d = RowColTypedDatum(CALL_ row, col, expected, is_null_ret);
-	CALL_DEBUG_OUT( "==> %d", DatumGetInt32(d) );
+	CALL_DEBUG_OUT( "--> %d", DatumGetInt32(d) );
 	return DatumGetInt32(d);
 }
 
@@ -1816,7 +1815,7 @@ extern int64 RowColTypedInt64(
 ) {
 	CALL_LINK();
 	const Datum d = RowColTypedDatum(CALL_ row, col, expected, is_null_ret);
-	CALL_DEBUG_OUT( "==> %ld", DatumGetInt64(d) );
+	CALL_DEBUG_OUT( "--> %ld", DatumGetInt64(d) );
 	return DatumGetInt64(d);
 }
 
@@ -1844,7 +1843,7 @@ extern int64 RowColIfInt64(
 extern bool RowColBool(CALLS_ int row, int col, bool *is_null_ret) {
 	CALL_LINK();
 	const Datum d = RowColTypedDatum(CALL_ row, col, Bool_Type, is_null_ret);
-	CALL_DEBUG_OUT( "==> %s", DatumGetBool(d) ? "true" : "false" );
+	CALL_DEBUG_OUT( "--> %s", DatumGetBool(d) ? "true" : "false" );
 	return DatumGetBool(d);
 }
 
@@ -1857,9 +1856,9 @@ extern Oid RowColOid( CALLS_ int row, int col,
 	const Datum d = RowColDatum(CALL_ row, col, result_type_ptr, is_null_ptr);
 	CallAssert(!*is_null_ptr || is_null_ret);
 	if (*is_null_ptr)
-		CALL_DEBUG_OUT( "==> NULL" );
+		CALL_DEBUG_OUT( "--> NULL" );
 	else
-		CALL_DEBUG_OUT( "==> %d::%d",
+		CALL_DEBUG_OUT( "--> %d::%d",
 										(int) DatumGetObjectId(d), (int) result_type.type_oid );
 	return *is_null_ptr ? 0 : DatumGetObjectId(d);
 }
@@ -1873,9 +1872,9 @@ extern Oid RowColTypedOid(
 	const Datum d = RowColTypedDatum(CALL_ row, col, expected, is_null_ptr);
 	CallAssert(!*is_null_ptr || is_null_ret);
 	if (*is_null_ptr)
-		CALL_DEBUG_OUT( "==> NULL" );
+		CALL_DEBUG_OUT( "--> NULL" );
 	else
-		CALL_DEBUG_OUT( "==> %d", (int) DatumGetObjectId(d) );
+		CALL_DEBUG_OUT( "--> %d", (int) DatumGetObjectId(d) );
 	return *is_null_ptr ? 0 : DatumGetObjectId(d);
 }
 
@@ -1895,7 +1894,7 @@ extern StrPtr RowColStrPtr(CALLS_ int row, int col) {
 			 "%d, %d out of range", row, col );
 	CallAssertMsg(
 	SPI_result != SPI_ERROR_NOOUTFUNC, "row %d, col %d", row, col );
-	CALL_DEBUG_OUT( "==> %s", s ?: "NULL" );
+	CALL_DEBUG_OUT( "--> %s", s ?: "NULL" );
 	return s;
 }
 

@@ -147,7 +147,14 @@ static inline bool SpxObjPtr_AtEnd(CALLS_ void *spx_obj, void *ptr) {
 
 static inline void Assert_SpxObjPtr_AtEnd(CALLS_ void *spx_obj, void *ptr) {
 	CALLS_LINK();
+#if 1		// extra feedback if it bombs!!
+	SpxObjHdr hdr = spx_obj_hdr(CALL_ spx_obj);
+	if ( hdr->end_ptr != (char *) ptr )
+		CALL_DEBUG_OUT( "object end is %p but pointer is %p",
+										hdr->end_ptr, (char *) ptr );
+#else	 // this was failing on LoadTypes but above was not??
 	CallAssert( SpxObjPtr_AtEnd(CALL_ spx_obj, ptr ) );
+#endif
 }
 
 /* I'm not seeing initialization complete!  Usage:
@@ -271,7 +278,7 @@ typedef const struct spx_schema_cache {
 	SpxSchemas by_id[max_id+1];
 	SpxSchemas by_name[size];
 	SpxSchemas by_oid[size];
-	struct spx_schema schemas[size]; // not same size!
+	struct spx_schema variable_length_schemas[size];
 #endif
 }*SpxSchemaCache;
 
@@ -287,7 +294,7 @@ spx_schema_cache_by_oid(SpxSchemaCache cache) {
 	return spx_schema_cache_by_name(cache) + cache->size;
 }
 
-// returns start of schemas arena
+// returns start of schema arena
 static inline SpxSchemas
 spx_schema_cache_schemas(SpxSchemaCache cache) {
 	return (SpxSchemas) (spx_schema_cache_by_oid(cache) + cache->size);
@@ -543,7 +550,17 @@ typedef const struct spx_type {
 static inline SpxTypeOids SpxTypeOid(SpxTypes t) {
 	return SpxMkTypeOid(t->oid, t->name);
 }
-								 
+
+// return pointer to next variable-length spx_type structure
+static inline SpxTypes spx_type_next(SpxTypes type) {
+#ifndef _STRIP_META_
+	size_t name_size = spx_aligned_size(strlen(type->name)+1);
+	return (SpxTypes) ((char *) (type + 1) + name_size);
+#else
+	return type + 1;
+#endif
+}
+
 #ifndef _STRIP_META_
 #define SPX_TYPE_FMT_ FMT_LF2_(type, "%s.%s", SPX_OID_FMT_)
 #define SPX_TYPE_FMT FMT_LF2(type, "%s.%s", SPX_OID_FMT_)
@@ -562,17 +579,24 @@ struct spx_type_cache {
 	SpxSchemaCache schema_cache;
 	SpxSchemaPath schema_path;	// needed?
 	int size;
-#if 1
+#if 1			// not really
 	SpxTypes by_name[0];
-#else
+#else			// really (but illegal in C):
 	SpxTypes by_name[size];
 	SpxTypes by_oid[size];
+	struct spx_type variable_length_types[size];
 #endif
 };
 
 static inline SpxTypes *
 spx_type_cache_by_oid(SpxTypeCache cache) {
 	return (SpxTypes *) cache->by_name + cache->size;
+}
+
+// returns start of type arena
+static inline SpxTypes
+spx_type_cache_types(SpxTypeCache cache) {
+	return (SpxTypes) (spx_type_cache_by_oid(cache) + cache->size);
 }
 
 SpxTypes SpxTypeByOid(CALLS_ Oid oid);
