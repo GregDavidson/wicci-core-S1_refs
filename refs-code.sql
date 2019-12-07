@@ -427,7 +427,6 @@ COMMENT ON FUNCTION refs_ready() IS '
 	Ensure that all modules of the refs schema
 	are present and initialized.
 ';
-*/
 
 CREATE OR REPLACE
 FUNCTION unsafe_refs_initialize() RETURNS cstring
@@ -444,10 +443,12 @@ COMMENT ON FUNCTION refs_ready() IS '
 	Ensure that all modules of the refs schema
 	are present and initialized.
 ';
+*/
 
 CREATE OR REPLACE
 FUNCTION ensure_schema_ready() RETURNS regprocedure[] AS $$
-	SELECT refs_ready();
+	SELECT ARRAY['refs_base_init()'::regprocedure]
+	from refs_base_init()
 $$ LANGUAGE sql;
 
 -- * typed_object_classes registry support
