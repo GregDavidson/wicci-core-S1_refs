@@ -31,7 +31,7 @@ SELECT set_file('spx-schema.sql', '$Id');
 
 -- *** Schemas are shadowed  in:
 	--	s0_lib.spx_schema_names
-	--	s0_lib.our_namespaces
+	--	s0_lib.our_schema_namespaces (materialized view)
 
 -- unsafe_spx_load_schemas() -- loads schema_view
 -- unsafe_spx_load_schema_path() -- loads schema_path_by_id
