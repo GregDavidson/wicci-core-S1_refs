@@ -40,13 +40,13 @@ CREATE DOMAIN ref_ids AS :WordIntsPG;
 -- ** refs_as_ints = int4 or int8
 CREATE DOMAIN refs_as_ints AS :WordIntsPG;
 
--- CREATE OR REPLACE
--- FUNCTION refs_base_init() RETURNS cstring
--- AS 'spx.so' LANGUAGE c;
--- COMMENT ON FUNCTION refs_base_init() IS
--- 'initialize the fundamental refs package
--- returning the module id string
--- ';
+CREATE OR REPLACE
+FUNCTION refs_base_init() RETURNS cstring
+AS 'spx.so' LANGUAGE c;
+COMMENT ON FUNCTION refs_base_init() IS
+'initialize the fundamental refs package
+returning the module id string
+';
 
 CREATE OR REPLACE
 FUNCTION ref_nil_tag() RETURNS ref_tags
