@@ -446,9 +446,15 @@ COMMENT ON FUNCTION refs_ready() IS '
 */
 
 CREATE OR REPLACE
-FUNCTION ensure_schema_ready() RETURNS regprocedure[] AS $$
-	SELECT ARRAY['refs_base_init()'::regprocedure]
-	from refs_base_init()
+FUNCTION refs_initialized() RETURNS bool
+AS 'spx.so' LANGUAGE c;
+
+CREATE OR REPLACE
+FUNCTION ensure_schema_ready() RETURNS text AS $$
+	SELECT CASE refs_initialized()
+	WHEN true THEN 'Already Initialized'
+	WHEN false THEN refs_base_init()::text
+  END
 $$ LANGUAGE sql;
 
 -- * typed_object_classes registry support
