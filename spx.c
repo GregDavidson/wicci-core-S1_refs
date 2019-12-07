@@ -571,7 +571,7 @@ static SpxSchemaPath LoadSchemaPath(_CALLS_) {
 	int row;
 	for (row = 0; row < num_rows; row++) {
 		const int id = RowColTypedInt32(CALL_ row, id_, Int32_Type, NULL);
-		// CALL_DEBUG_OUT("row %d schema id %d", row, id);
+		CALL_DEBUG_OUT("row %d schema id %d", row, id);
 		CallAssertMsg( id >= sp->schema_cache->min_id,
 			"id %d, min_id %d", id, sp->schema_cache->min_id );
 		CallAssertMsg( id <= sp->schema_cache->max_id,
@@ -579,7 +579,7 @@ static SpxSchemaPath LoadSchemaPath(_CALLS_) {
 		const SpxSchemas s = SpxSchemaById(CALL_ id);
 		CallAssertMsg(s, "No schema with id %d", id);
 		CallAssertMsg(s->oid, "No schema oid for id %d", id);
-		CALL_DEBUG_OUT("row %d schema id %d oid %d", row, id, s->oid);
+		CALL_DEBUG_OUT("row %d schema %d %d %s", row, s->id, s->oid, s->name);
 		*path_ptr++ = s;
 	}
 	Assert_SpxObjPtr_AtEnd(CALL_ sp, path_ptr );
@@ -638,13 +638,14 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 		p->id = RowColTypedInt32(CALL_ row, id_, Int32_Type, NULL);
 		CallAssertMsg( p->id >= 0 && p->id <= max_id,
 			"row %d bad schema id %d", row, p->id );
-		bool oid_is_null;
-		p->oid = RowColTypedOid(CALL_ row, oid_, Oid_Type, &oid_is_null);
-		if (oid_is_null) {
-			CALL_WARN_OUT("Schema id %d has no OID yet!", p->id);
-			p->oid = 0;
-		}
+		bool oid_vey_is_null;
+		p->oid = RowColTypedOid(CALL_ row, oid_, Oid_Type, &oid_vey_is_null);
 		const int name_len = RowColTextCopy(CALL_ row, name_, p->name, room_left, NULL);
+		if (oid_vey_is_null) {
+			CALL_WARN_OUT("Schema id %d, OID VEY, %s!", p->id, p->name);
+			p->oid = 0;
+		} else
+			CALL_DEBUG_OUT("Schema id %d, Oid %d, %s!", p->id, p->oid, p->name);
 		CallAssert(name_len < room_left);
 		room_left -= spx_aligned_size(name_len+1);
 		cache->by_id[p->id] = *name_p++ =  *oid_p++ = p;
@@ -832,18 +833,26 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 	SpxTypes *by_name = cache->by_name,  *by_oid = spx_type_cache_by_oid(cache);
 	size_t room_left = sum_text;
 	for (row = 0; row < num_rows; row++) {
-		bool is_null;
-		p->oid = RowColTypedOid(CALL_ row, oid_, Type_Type, &is_null);
-		if (is_null)
-			CALL_BUG_OUT("row %d oid vey is null", row);
-		else
-			CALL_DEBUG_OUT("row %d oid %d", row, p->oid);
+		bool oid_vey_is_null;
+		p->oid = RowColTypedOid(CALL_ row, oid_, Type_Type, &oid_vey_is_null);
 		CallAssert(p->schema = SpxSchemaById(
 			 CALL_ RowColTypedInt32(CALL_ row, schema_id_, Int32_Type, 0)
 		) );
 		p->len = RowColTypedInt32(CALL_ row, typlen_, Int32_Type, NULL);
 		p->by_value = RowColBool(CALL_ row, typbyval_, NULL);
 		const int name_len = RowColTextCopy(CALL_ row, name_, p->name, room_left, NULL);
+		if (oid_vey_is_null)
+			CALL_BUG_OUT(
+				"Type: Row %d, Oid Vey, schema %d %d %s, len %d, byval %d, %s",
+				row, p->schema->id, p->schema->oid, p->schema->name,
+				p->len, p->by_value, p->name
+			);
+		else
+			CALL_DEBUG_OUT(
+				"Type: Row %d, Oid %d, schema %d %d %s, len %d, byval %d, %s",
+				row, p->oid, p->schema->id, p->schema->oid, p->schema->name,
+				p->len, p->by_value, p->name
+		);
 		CallAssert(name_len < room_left);
 		room_left -= spx_aligned_size(name_len+1);
 		*by_name++ = *by_oid++ = p;
@@ -1930,7 +1939,7 @@ extern size_t RowColTextCopy(
 	const size_t text_len = SpxTextOctetLen(text_datum);
 	text *const text_ptr = DatumGetTextPP(text_datum);
 	text_to_cstring_buffer(text_ptr, buffer, buffer_size);
-	CALL_DEBUG_OUT("--> buf size: %zu, text len: %zu, text: ", buffer_size, text_len, buffer);
+	CALL_DEBUG_OUT("--> room: %zu, len: %zu, text: %s", buffer_size, text_len, buffer);
 	return text_len;
 }
 
