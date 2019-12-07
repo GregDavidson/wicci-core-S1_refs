@@ -20,7 +20,8 @@
 #define C_DEBUG_H
 
 #include <stdio.h>
-#include "debug-log.h"
+// maybe merge with debug-log.h ??
+// #include "debug-log.h"
 
 // Standard C now defines _Static_assert(cond, str)
 #if 0
@@ -35,19 +36,6 @@
 #define STATIC_ASSERT_NAME2_(line)	assertion_failed_at_##line
 #endif
 #endif
-
-/* Define MODULE_TAG if you want a module-specific instance
-	 of this debugging code.
-*/
-
-#ifndef MODULE_TAG
-#define MODULE_TAG(x) x
-#endif
-
-int MODULE_TAG(Initialized_) = 0;	/*
-	used by  those packages which care;
-	see below for the functions on this variable
-*/
 
 static int Debug_Level_ = 0;
 
@@ -75,43 +63,6 @@ DebugSetOff(void) {			// turn off, return level
 	if ( Debug_Level_ > 0 )
 		DebugSetLevel( -Debug_Level_ );
 	return Debug_Level_;
-}
-
-#ifndef C_DEBUG_NO_PG
-
-// FUNCTION_DEFINE is in spx.h
-
-FUNCTION_DEFINE(MODULE_TAG(debug_level)) {	// ()  -> integer
-	PG_RETURN_INT32( DebugLevel() );
-}
-
-FUNCTION_DEFINE(MODULE_TAG(debug_set)) {	// (integer) -> integer
-	PG_RETURN_INT32( DebugSetLevel( PG_GETARG_INT32(0) ) );
-}
-
-FUNCTION_DEFINE(MODULE_TAG(debug)) {		// () -> boolean
-	PG_RETURN_BOOL( DebugLevel() > 0 );
-}
-
-FUNCTION_DEFINE(MODULE_TAG(debug_on)) {		// () -> integer
-	PG_RETURN_INT32( DebugSetOn( ) );
-}
-
-FUNCTION_DEFINE(MODULE_TAG(debug_off)) {	// () -> integer
-	PG_RETURN_INT32( DebugSetOff( ) );
-}
-
-#endif
-
-static inline int
-Initialized(void) {		// is this package intialized? 
-	return MODULE_TAG(Initialized_);
-}
-
-static inline void
-Initialize(void) {		// record this package is initialized 
-	 MODULE_TAG(Initialized_) = 1;
-	 DEBUG_OUT( "Module Initialized" );
 }
 
 #endif

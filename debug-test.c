@@ -15,7 +15,7 @@
  */
 
 #define C_DEBUG_NO_PG
-#include "debug.h"
+#include "debug-log.h"
 
 int main() {
   // debug-log features

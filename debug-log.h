@@ -22,6 +22,9 @@
 #define C_DEBUG_LOG_H
 
 #include <stdio.h>
+// We depend on DebugLevel() from "debug.h"
+// but it was including us!!
+#include "debug.h"
 
 extern FILE *debug_log_;
 

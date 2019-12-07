@@ -14,7 +14,6 @@
  *
  */
 
-
 #include "debug-log.h"
 
 FILE *debug_log_ = 0;
