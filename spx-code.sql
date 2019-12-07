@@ -139,16 +139,16 @@ SELECT oid_::oid, (
 
 -- ** fundamental functions
 
--- CREATE OR REPLACE
--- FUNCTION spx_init() RETURNS cstring
--- AS 'spx.so' LANGUAGE c;
+CREATE OR REPLACE
+FUNCTION spx_init() RETURNS cstring
+AS 'spx.so' LANGUAGE c;
 
 /* NOT SAFE!  Only call if we've already called
  spx_collate_locale()
  unsafe_spx_load_schemas()
  spx_debug_schemas()
  unsafe_spx_load_schema_path()
-*/
+
 -- needed for jgd debug!!  Remove DROP when remove that!!
 DROP FUNCTION IF EXISTS spx_initialize();
 CREATE OR REPLACE
@@ -176,7 +176,7 @@ AS 'spx.so' LANGUAGE c;
 CREATE OR REPLACE
 FUNCTION unsafe_spx_load_procs() RETURNS integer
 AS 'spx.so' LANGUAGE c;
-
+*/
 CREATE OR REPLACE
 FUNCTION spx_test_select(text, integer) RETURNS int8
 AS 'spx.so' LANGUAGE c STRICT;
@@ -258,6 +258,7 @@ AS 'spx.so' LANGUAGE c ;
 
 -- * sql functions
 
+/*
 -- Ensure Sql module ready
 CREATE OR REPLACE
 FUNCTION spx_ready() RETURNS regprocedure[] AS $$
@@ -276,10 +277,11 @@ COMMENT ON FUNCTION spx_ready() IS '
 	Ensure that all modules of the spx schema
 	are present and initialized.
 ';
+*/
 
 CREATE OR REPLACE
 FUNCTION ensure_schema_ready() RETURNS regprocedure[] AS $$
-	SELECT spx_ready();
+	SELECT ARRAY['spx_init()'::regprocedure] FROM  spx_init();
 $$ LANGUAGE sql;
 
 -- * spx-test data
