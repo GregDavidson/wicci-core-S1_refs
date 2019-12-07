@@ -18,7 +18,7 @@ static const char spx_version[] = "$Id: spx-test.c,v 1.1 2006/06/28 01:34:16 gre
 
 #include "spx.h"
 #define MODULE_TAG(name) spx_test##name
-#include "debug.h"
+#include "debug-log.h"
 
 #ifdef PG_MODULE_MAGIC
 PG_MODULE_MAGIC;
