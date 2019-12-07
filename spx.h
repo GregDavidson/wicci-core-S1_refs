@@ -1240,6 +1240,10 @@ bool RowColBool(CALLS_ int row, int col, bool *null_ret);
 StrPtr RowColStrPtr(CALLS_ int row, int col);  // fragile!!! why???
 StrPtr RowColStr(CALLS_ int row, int col, ALLOCATOR_PTR(alloc));
 SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc));
+size_t RowColTextLen(CALLS_ int row, int col, bool *is_null_ret);
+size_t RowColTextCopy(
+	CALLS_ int row, int col, char *buffer, size_t buffer_size, bool *is_null_ret
+);
 
 /* Execute a read-only query plan returning the result, if any */
 

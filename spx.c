@@ -596,9 +596,11 @@ extern int SpxLoadSchemaPath(_CALLS_) {
 }
 
 static SpxSchemaCache LoadSchemas(_CALLS_) {
-	enum schema_fields {	id_, name_, oid_, name_len_ };
+	//	enum schema_fields {	id_, name_, oid_, name_len_ };
+	enum schema_fields {	id_, name_, oid_ };
 	static const char select_schemas[] = "SELECT DISTINCT"
-		" id::int4, schema_name::text, oid, octet_length(schema_name)::int4"
+		//		" id::int4, schema_name::text, oid, octet_length(schema_name)::int4"
+		" id::int4, schema_name::text, oid"
 		" FROM our_schema_names"
 		" LEFT JOIN pg_namespace ON (schema_name = nspname)"
 		" ORDER BY schema_name";
@@ -613,10 +615,7 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 	int row;
 	for (row = 0; row < num_rows; row++) {
 		const int id =  RowColTypedInt32(CALL_ row, id_, Int32_Type, NULL);
-		const int name_len = RowColTypedInt32(CALL_ row, name_len_, Int32_Type, NULL);
-		/* const Datum name_datum = RowColTypedDatum(CALL_ row, name_, Text_Type, NULL); */
-		/* const int name_len_too = textoctetlen(name_datum); */
-		/* CallAssert(name_len == name_len_too); */
+		const int name_len = RowColTextLen(CALL_ row, name_, NULL);
 		if (id < min_id) min_id = id;
 		if (id > max_id) max_id = id;
 		sum_text += spx_aligned_size(name_len+1);
@@ -624,11 +623,10 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 	const int by_id_len = max_id + 1;
 	const SchemaCachePtr cache = spx_obj_alloc(
 	sizeof *cache
-	+ by_id_len * sizeof *cache->by_id	// schema ptr
-	+ num_rows * sizeof *cache->by_id	// schema ptr
-	+ num_rows * sizeof *cache->by_id	// schema ptr
-	+ num_rows * sizeof **cache->by_id	// schema structure
-	+ sum_text
+		+ by_id_len * sizeof *cache->by_id		// schema ptr
+		+ 2 * num_rows * sizeof *cache->by_id	// schema ptr
+		+ num_rows * sizeof **cache->by_id		// schema structure
+		+ sum_text
 	);
 	CallAssert(cache);
 	cache->min_id = min_id;
@@ -637,7 +635,7 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 	SchemaPtrs name_p = (SchemaPtrs) spx_schema_cache_by_name(cache);
 	SchemaPtrs oid_p = (SchemaPtrs) spx_schema_cache_by_oid(cache);
 	Schemas p = (Schemas) spx_schema_cache_schemas(cache);
-	size_t sum_text_too = 0;
+	size_t room_left = sum_text;
 	for (row = 0; row < num_rows; row++) {
 		p->id = RowColTypedInt32(CALL_ row, id_, Int32_Type, NULL);
 		CallAssertMsg( p->id >= 0 && p->id <= max_id,
@@ -648,41 +646,16 @@ static SpxSchemaCache LoadSchemas(_CALLS_) {
 			CALL_WARN_OUT("Schema id %d has no OID yet!", p->id);
 			p->oid = 0;
 		}
-		const int name_len = RowColTypedInt32(CALL_ row, name_len_, Int32_Type, NULL);
-		sum_text_too += spx_aligned_size(name_len+1);
-		/* Method one: Get the name as a text dataum and copy it
-			 into place with */
-		//	 void text_to_cstring_buffer(const text *src, char *dst, size_t dst_len)
-		// see backend/utils/adt/varlena.c for details
-		// This avoids extra allocations and copying!!
-		// We're NOT using our SPX api though!!
-		{
-			bool is_null;
-			const Datum name_datum = RowColTypedDatum(CALL_ row, name_, Text_Type, &is_null);
-			// const Datum name_datum = SPI_getbinval(
-			// 	SPI_tuptable->vals[row], SPI_tuptable->tupdesc, name_, &is_null );
-			text *const name_text = DatumGetTextPP(name_datum);
-			text_to_cstring_buffer(name_text, p->name, name_len+1);
-			CALL_DEBUG_OUT("--> %s via getbinval", p->name);
-			CallAssert( name_len == strlen(p->name) );
-		}
-		// Verify with method two, using SPI_getvalue (underlyingly):
-		{
-			char *s = RowColStrPtr(CALL_ row, name_);
-			if ( strcmp(p->name, s) )
-				CALL_WARN_OUT("name '%s' != '%s'", p->name, s);
-			const int name_len_too = strlen(s);
-			if ( name_len != name_len_too )
-				CALL_WARN_OUT("name_len %d != %d", name_len, name_len_too);
-			pfree(s);
-		}
+		const int name_len = RowColTextCopy(CALL_ row, name_, p->name, room_left, NULL);
+		CallAssert(name_len < room_left);
+		room_left -= spx_aligned_size(name_len+1);
 		cache->by_id[p->id] = *name_p++ =  *oid_p++ = p;
 		p = spx_schema_next(p);
 	}
 	// Check our arithmetic on the allocation and incrementing:
 	Assert_SpxObjPtr_AtEnd(CALL_ cache, p);
-	if ( sum_text != sum_text_too )
-		CALL_WARN_OUT("sum_text %zu != %zu", sum_text, sum_text_too);
+	if ( room_left != 0 )
+		CALL_WARN_OUT("room_left: %zu", room_left);
 	CALL_DEBUG_OUT("About to qsort the Schema Cache by_oid");
 	qsort(	spx_schema_cache_by_oid(cache),		cache->size,
 					sizeof (SpxSchemas),	cmp_schemas_by_oid	 );
@@ -1905,6 +1878,7 @@ extern StrPtr RowColStr(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
 	return alloc ? NewStr( CALL_ s, alloc ) : s;
 }
 
+// Deprecated!
 // This seems to be quite a mess!!  We're not even using alloc!!
 extern SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
 	CALL_LINK();
@@ -1918,6 +1892,52 @@ extern SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
 		pfree(s2);
   }
 	return (SpxText){tp};
+}
+
+// You MUST only pass Datums of type text!
+static inline size_t SpxTextOctetLen(Datum text_datum) {
+	/* We need not detoast the input according to
+	 * backend/utils/adt/varlena.c textoctetlen()
+	 */
+	return toast_raw_datum_size(text_datum) - VARHDRSZ;
+}
+
+// Returns 0 for NULL
+// OK to not provide an is_null_ret pointer
+extern size_t RowColTextLen(CALLS_ int row, int col, bool *is_null_ret) {
+	CALL_LINK();
+	bool is_null, *const is_null_ptr = is_null_ret ?: &is_null;
+	const Datum text_datum = RowColTypedDatum(CALL_ row, col, Text_Type, is_null_ptr);
+	if (is_null) {
+		CALL_DEBUG_OUT("--> NULL");
+		return 0;
+	}
+	size_t len = SpxTextOctetLen(text_datum);
+	CALL_DEBUG_OUT("--> %zu", len);
+	return len;
+}
+
+// Buffer size must be greater than 0
+// Returns string length, not length stored!
+// Always '\0'-terminates string, even if truncated or NULL!
+// OK to not provide an is_null_ret pointer
+extern size_t RowColTextCopy(
+	CALLS_ int row, int col, char *buffer, size_t buffer_size, bool *is_null_ret
+) {
+	CALL_LINK();
+	bool is_null, *const is_null_ptr = is_null_ret ?: &is_null;
+	const Datum text_datum = RowColTypedDatum(CALL_ row, col, Text_Type, is_null_ptr);
+	if (is_null) {
+		CALL_DEBUG_OUT("--> NULL --> NUL");
+		CallAssert(buffer_size > 0);
+		*buffer = '\0';
+		return 0;
+	}
+	const size_t text_len = SpxTextOctetLen(text_datum);
+	text *const text_ptr = DatumGetTextPP(text_datum);
+	text_to_cstring_buffer(text_ptr, buffer, buffer_size);
+	CALL_DEBUG_OUT("--> buf size: %zu, text len: %zu, text: ", buffer_size, text_len, buffer);
+	return text_len;
 }
 
 // execute a query plan returning status
