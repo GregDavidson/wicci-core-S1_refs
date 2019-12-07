@@ -1368,7 +1368,10 @@ SpxArrayInfo SpxGetArray(
 
 /* Major Functions */
 
-// FUNCTION_DECLARE(spx_init);
+FUNCTION_DECLARE(spx_init);
+FUNCTION_DECLARE(spx_initialized);
+
+// Deprecated:
 FUNCTION_DECLARE(unsafe_spx_initialize);
 FUNCTION_DECLARE(spx_collate_locale);
 FUNCTION_DECLARE(unsafe_spx_load_schemas);

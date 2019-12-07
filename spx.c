@@ -559,7 +559,7 @@ static SpxSchemaPath LoadSchemaPath(_CALLS_) {
 	CALL_LINK();
 	CALL_DEBUG_OUT("==> LoadSchemaPath");
 	static SpxPlans plan;
-	SpxPlan0( CALL_ &plan, "SELECT id::int4 FROM unnest(schema_path_array()) id"	);
+	SpxPlan0( CALL_ &plan, "SELECT id::int4 FROM our_existing_namespaces"	);
 	enum {id_, name_, oid_ };
 	const int num_rows = SpxQueryDB(plan, NULL, MAX_SCHEMAS);
 	const SchemaPathPtr sp =
@@ -597,11 +597,9 @@ extern int SpxLoadSchemaPath(_CALLS_) {
 
 static SpxSchemaCache LoadSchemas(_CALLS_) {
 	enum schema_fields {	id_, name_, oid_ };
-	static const char select_schemas[] = "SELECT DISTINCT"
-		" id::int4, schema_name::text, oid"
-		" FROM our_schema_names"
-		" LEFT JOIN pg_namespace ON (schema_name = nspname)"
-		" ORDER BY schema_name";
+	static const char select_schemas[] =
+		"SELECT id::int4, schema_name::text, oid"
+		" FROM our_namespaces_by_name";
 	CALL_LINK();
 	CALL_DEBUG_OUT("==> LoadSchemas");
 	static SpxPlans plan;
@@ -1383,6 +1381,13 @@ FUNCTION_DEFINE(spx_init) {
 	SpxInit(_CALL_);
 	// CallAssert(spx_version); // always true
 	PG_RETURN_CSTRING( NewStr(CALL_ spx_version, call_palloc) );
+}
+
+FUNCTION_DEFINE(spx_initialized) {
+	CALL_BASE();
+	SPX_FUNC_NUM_ARGS_IS(0);
+	CALL_DEBUG_OUT("%d", MODULE_TAG(Initialized_));
+	PG_RETURN_BOOL(MODULE_TAG(Initialized_));
 }
 
 // For debugging only!!
