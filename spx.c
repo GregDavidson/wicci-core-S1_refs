@@ -596,10 +596,8 @@ extern int SpxLoadSchemaPath(_CALLS_) {
 }
 
 static SpxSchemaCache LoadSchemas(_CALLS_) {
-	//	enum schema_fields {	id_, name_, oid_, name_len_ };
 	enum schema_fields {	id_, name_, oid_ };
 	static const char select_schemas[] = "SELECT DISTINCT"
-		//		" id::int4, schema_name::text, oid, octet_length(schema_name)::int4"
 		" id::int4, schema_name::text, oid"
 		" FROM our_schema_names"
 		" LEFT JOIN pg_namespace ON (schema_name = nspname)"
@@ -812,22 +810,19 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 	CALL_DEBUG_OUT("==> LoadTypes");
 	static SpxPlans plan;
 	SpxPlan0( CALL_ &plan, "SELECT DISTINCT"
-		" oid_, name_::text, schema_id_::int4,"
-		" typlen_::int4, typbyval_, octet_length(name_)::int4 as name_len_"
+		" oid_, name_::text, schema_id_::int4, typlen_::int4, typbyval_"
 		" FROM s1_refs.type_view__ ORDER BY name_" );
-	enum {
-		oid_, name_, schema_id_, typlen_, typbyval_, name_len_
-	};
+	enum { oid_, name_, schema_id_, typlen_, typbyval_ };
 	const int num_rows = SpxQueryDB(plan, NULL, MAX_TYPES);
-	size_t name_size_sum = 0;
+	size_t sum_text = 0;
 	int row;
 	for (row = 0; row < num_rows; row++) {
-		const int name_len = RowColTypedInt32(CALL_ row, name_len_, Int32_Type, NULL);
-		name_size_sum += spx_aligned_size(name_len + 1);
+		const int name_len = RowColTextLen(CALL_ row, name_, NULL);
+		sum_text += spx_aligned_size(name_len + 1);
 	}
 	TypePtrs p;			// We have 3 arrays of size TypePtrs all pointing into our arena
 	const TypeCachePtr cache = spx_obj_alloc(
-		sizeof *cache	+	num_rows * (3 * sizeof p + sizeof *p) + name_size_sum
+		sizeof *cache	+	num_rows * (3 * sizeof p + sizeof *p) + sum_text
 	);
 	CallAssert(cache );
 	cache->schema_cache = Spx_Schema_Cache;
@@ -835,6 +830,7 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 	cache->size = num_rows;
 	p = (TypePtrs) spx_type_cache_types(cache);
 	SpxTypes *by_name = cache->by_name,  *by_oid = spx_type_cache_by_oid(cache);
+	size_t room_left = sum_text;
 	for (row = 0; row < num_rows; row++) {
 		bool is_null;
 		p->oid = RowColTypedOid(CALL_ row, oid_, Type_Type, &is_null);
@@ -847,22 +843,16 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 		) );
 		p->len = RowColTypedInt32(CALL_ row, typlen_, Int32_Type, NULL);
 		p->by_value = RowColBool(CALL_ row, typbyval_, NULL);
-		const int name_len = RowColTypedInt32(CALL_ row, name_len_, Int32_Type, NULL);
-		const Datum name_datum = RowColTypedDatum(CALL_ row, name_, Text_Type, &is_null);
-		if (is_null) {
-			*p->name = '\0';
-			CALL_BUG_OUT("row %d name is null", row);
-		} else {
-			text *const name_text = DatumGetTextPP(name_datum);
-			text_to_cstring_buffer(name_text, p->name, name_len+1);
-			CALL_DEBUG_OUT("--> %s", p->name);
-			CallAssert( name_len == strlen(p->name) );
-		}
+		const int name_len = RowColTextCopy(CALL_ row, name_, p->name, room_left, NULL);
+		CallAssert(name_len < room_left);
+		room_left -= spx_aligned_size(name_len+1);
 		*by_name++ = *by_oid++ = p;
 		p = spx_type_next(p);
 	}
 	// Check our arithmetic on the allocation and incrementing:
 	Assert_SpxObjPtr_AtEnd( CALL_ cache, p );
+	if ( room_left != 0 )
+		CALL_WARN_OUT("room_left: %zu", room_left);
 	CALL_DEBUG_OUT("about to qsort %d rows by oid", num_rows);
 	qsort(	spx_type_cache_by_oid(cache),		cache->size,
 		sizeof *spx_type_cache_by_oid(cache),	cmp_types_by_oid);
