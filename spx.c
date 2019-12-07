@@ -1481,15 +1481,19 @@ static int ResolveSchema(CALLS_ int col, int num_oids) {
 // For debugging only!!
 FUNCTION_DEFINE(spx_debug_schemas) {
 	extern SpxSchemaCache Spx_Schema_Cache;
+	extern SpxSchemaPath Spx_Schema_Path;
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(0);
 	const SpxSchemaCache c = Spx_Schema_Cache;
 	CallAssert(c);
-	const SpxSchemaPath p = Spx_Schema_Path;
-	CallAssert(p);
 	CALL_DEBUG_OUT(
-		"Schema Min Id = %d, Max Id = %d, Array Len = %d, Path Len = %d",
-		c->min_id, c->max_id, c->size, p->size);
+		"Schema Min Id = %d, Max Id = %d, Array Len = %d",
+		c->min_id, c->max_id, c->size);
+	const SpxSchemaPath p = Spx_Schema_Path;
+	if (!p)
+		CALL_WARN_OUT("Spx_Schema_Path NULL");
+	else
+		CALL_DEBUG_OUT("Schema Path Len = %d", p->size);
 	CALL_DEBUG_OUT("Schemas By Id:");
 	for (int id = c->min_id; id <= c->max_id; id++) {
 		const SpxSchemas s = SpxSchemaById(CALL_ id);
