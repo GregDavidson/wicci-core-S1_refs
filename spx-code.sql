@@ -143,6 +143,10 @@ CREATE OR REPLACE
 FUNCTION spx_init() RETURNS cstring
 AS 'spx.so' LANGUAGE c;
 
+CREATE OR REPLACE
+FUNCTION spx_initialized() RETURNS bool
+AS 'spx.so' LANGUAGE c;
+
 /* NOT SAFE!  Only call if we've already called
  spx_collate_locale()
  unsafe_spx_load_schemas()
@@ -280,7 +284,7 @@ COMMENT ON FUNCTION spx_ready() IS '
 */
 
 CREATE OR REPLACE
-FUNCTION declare_system_schema(text) RETURNS oid AS $$
+FUNCTION s0_lib.declare_system_schema(text) RETURNS oid AS $$
 	SELECT declare_system_schema_($1);
   REFRESH MATERIALIZED VIEW our_schema_namespaces;
   REFRESH MATERIALIZED VIEW our_namespaces_by_name;
@@ -294,8 +298,11 @@ COMMENT ON FUNCTION declare_system_schema(text) IS
 'Calls declare_system_schema_ - and updates associated views!';
 
 CREATE OR REPLACE
-FUNCTION ensure_schema_ready() RETURNS regprocedure[] AS $$
-	SELECT ARRAY['spx_init()'::regprocedure] FROM  spx_init();
+FUNCTION ensure_schema_ready() RETURNS text AS $$
+	SELECT CASE spx_initialized()
+	WHEN true THEN 'Already Initialized'
+	WHEN false THEN spx_init()::text
+  END
 $$ LANGUAGE sql;
 
 -- * spx-test data
