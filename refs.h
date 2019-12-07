@@ -70,6 +70,8 @@ Datum CallMethod(
 );
 
 FUNCTION_DECLARE(refs_base_init);	 // void -> cstring
+FUNCTION_DECLARE(spx_initialized);
+
 FUNCTION_DECLARE(unsafe_refs_initialize);	 // void -> cstring
 FUNCTION_DECLARE(unsafe_refs_load_toms); // void --> INT32
 FUNCTION_DECLARE(refs_debug_toms); // void --> INT32

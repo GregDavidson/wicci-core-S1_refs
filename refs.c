@@ -932,6 +932,13 @@ FUNCTION_DEFINE(refs_base_init) {
 	PG_RETURN_CSTRING( NewStr(CALL_ refs_module_id, call_palloc) );
 }
 
+FUNCTION_DEFINE(refs_initialized) {
+	CALL_BASE();
+	SPX_FUNC_NUM_ARGS_IS(0);
+	CALL_DEBUG_OUT("%d", MODULE_TAG(Initialized_));
+	PG_RETURN_BOOL(MODULE_TAG(Initialized_));
+}
+
 /* Unsafe: Only call AFTER you've called
 	 unsafe_refs_load_toms()
 	 unsafe_refs_load_tocs()
