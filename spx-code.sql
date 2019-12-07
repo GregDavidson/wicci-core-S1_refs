@@ -280,6 +280,20 @@ COMMENT ON FUNCTION spx_ready() IS '
 */
 
 CREATE OR REPLACE
+FUNCTION declare_system_schema(text) RETURNS oid AS $$
+	SELECT declare_system_schema_($1);
+  REFRESH MATERIALIZED VIEW our_schema_namespaces;
+  REFRESH MATERIALIZED VIEW our_namespaces_by_name;
+  REFRESH MATERIALIZED VIEW our_existing_namespaces;
+	INSERT INTO our_namespaces(id, schema_oid)
+	SELECT id, oid FROM our_existing_namespaces
+	ON CONFLICT (id) DO UPDATE SET schema_oid = EXCLUDED.schema_oid;
+	SELECT declare_system_schema_($1);
+$$ LANGUAGE sql;
+COMMENT ON FUNCTION declare_system_schema(text) IS
+'Calls declare_system_schema_ - and updates associated views!';
+
+CREATE OR REPLACE
 FUNCTION ensure_schema_ready() RETURNS regprocedure[] AS $$
 	SELECT ARRAY['spx_init()'::regprocedure] FROM  spx_init();
 $$ LANGUAGE sql;
