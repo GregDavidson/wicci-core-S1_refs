@@ -18,7 +18,7 @@ static const char refs_module_id[] = "$Id: ref.c,v 1.5 2007/07/24 04:27:48 greg 
 #include "refs.h"
 
 #define MODULE_TAG(name) refs_##name
-#include "debug.h"
+#include "debug-spx.h"
 
 /* would like to get rid of this dependency
 	 and right now it's needed for call_in_method:
@@ -649,6 +649,7 @@ static TocCachePtr LoadTocs(_CALLS_) {
 	SpxPlan0( CALL_ &plan, select );
 	struct toc_cache toc;
 	toc.size = SpxQueryDB(plan, NULL, REF_MAX_TAG);
+	// I BET Ref_Tags_Type IS 0!!!
 	toc.max_tag = RowColTypedInt32(CALL_ 0, maxtag_, Ref_Tags_Type, 0);
 	if (toc.size != toc.max_tag + 1) {
 		CALL_WARN_OUT(
@@ -917,13 +918,12 @@ FUNCTION_DEFINE(ref_crefs_graft) {
 
 /* ** tags */
 
-#if 0
 FUNCTION_DEFINE(refs_base_init) {
 	CALL_BASE();
-	SpxRequired(_CALL_);
 	SPX_FUNC_NUM_ARGS_IS(0);
-	SpxRequireTypes(CALL_ Refs_Type_List, false);
 	const int level = StartSPX(_CALL_);
+	RequireSpxSPX(_CALL_);
+	SpxRequireTypes(CALL_ Refs_Type_List, false);
 	RefLoadToms(_CALL_);
 	RefLoadTocs(_CALL_);
 	FinishSPX(CALL_ level);
@@ -931,7 +931,6 @@ FUNCTION_DEFINE(refs_base_init) {
 	// CallAssert(refs_module_id); // always true
 	PG_RETURN_CSTRING( NewStr(CALL_ refs_module_id, call_palloc) );
 }
-#endif
 
 /* Unsafe: Only call AFTER you've called
 	 unsafe_refs_load_toms()
