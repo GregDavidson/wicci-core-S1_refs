@@ -63,8 +63,13 @@ typedef const struct spx_obj_header {
 	char *end_ptr;		     // end of the complete object
 	struct spx_obj_header *the_wheel; // a list we're part of
 	char object[0];
-} *SpxObj;
-typedef struct spx_obj_header *SpxObjHdr;
+} *SpxObjHdrs;
+
+typedef struct spx_obj_header *SpxMutableObjHdrs;
+static inline SpxMutableObjHdrs
+SpxMutableObjHdr(SpxObjHdrs const_obj_hdr) {
+	return (SpxMutableObjHdrs) const_obj_hdr;
+}
 
 /* Allocates object of given size along with a struct
 spx_obj_header attached to TheWheel, returning pointer to the
@@ -102,22 +107,22 @@ spx.c:
 
 // Return pointer to header under given object
 // Object MUST have been allocated with spx_obj_alloc
-static inline SpxObjHdr spx_obj_hdr(CALLS_ void *spx_obj) {
+static inline SpxObjHdrs spx_obj_hdr(CALLS_ void *spx_obj) {
 	CALLS_LINK();
-	SpxObjHdr hdr = (SpxObjHdr) spx_obj - 1;
+	SpxObjHdrs hdr = (SpxObjHdrs) spx_obj - 1;
 	CallAssert(hdr->the_wheel == &TheWheel);
 	return hdr;
 }
 
 static inline char *spx_obj_end(CALLS_ void *spx_obj) {
 	CALLS_LINK();
-	SpxObjHdr hdr = spx_obj_hdr(CALL_ spx_obj);
+	SpxObjHdrs hdr = spx_obj_hdr(CALL_ spx_obj);
 	return hdr->end_ptr;
 }
 
 static inline bool SpxObjPtr_Valid(CALLS_ void *spx_obj, void *ptr) {
 	CALLS_LINK();
-	SpxObjHdr hdr = spx_obj_hdr(CALL_ spx_obj);
+	SpxObjHdrs hdr = spx_obj_hdr(CALL_ spx_obj);
 	return (char *) ptr >= hdr->object && (char *) ptr <= hdr->end_ptr;
 }
 
@@ -129,7 +134,7 @@ static inline void Assert_SpxObjPtr_Valid(CALLS_ void *spx_obj, void *ptr) {
 static inline bool SpxObjPtr_In(CALLS_ void *spx_obj, void *ptr) {
 	CALLS_LINK();
 	Assert_SpxObjPtr_Valid(CALL_ spx_obj, ptr);
-	SpxObjHdr hdr = spx_obj_hdr(CALL_ spx_obj);
+	SpxObjHdrs hdr = spx_obj_hdr(CALL_ spx_obj);
 	return  (char *) ptr >= hdr->object && (char *) ptr < hdr->end_ptr;
 }
 
@@ -141,14 +146,14 @@ static inline void Assert_SpxObjPtr_In(CALLS_ void *spx_obj, void *ptr) {
 static inline bool SpxObjPtr_AtEnd(CALLS_ void *spx_obj, void *ptr) {
 	CALLS_LINK();
 	Assert_SpxObjPtr_Valid(CALL_ spx_obj, ptr);
-	SpxObjHdr hdr = spx_obj_hdr(CALL_ spx_obj);
+	SpxObjHdrs hdr = spx_obj_hdr(CALL_ spx_obj);
 	return hdr->end_ptr == (char *) ptr;
 }
 
 static inline void Assert_SpxObjPtr_AtEnd(CALLS_ void *spx_obj, void *ptr) {
 	CALLS_LINK();
 #if 1		// extra feedback if it bombs!!
-	SpxObjHdr hdr = spx_obj_hdr(CALL_ spx_obj);
+	SpxObjHdrs hdr = spx_obj_hdr(CALL_ spx_obj);
 	if ( hdr->end_ptr != (char *) ptr )
 		CALL_DEBUG_OUT( "object end is %p but pointer is %p",
 										hdr->end_ptr, (char *) ptr );
@@ -172,14 +177,14 @@ LoadTocs:642:		spx_obj_alloc( toc_cache_end(&toc) - (char *) &toc );
  */
 
 // free p or add it to TheWheel
-void SpxTryFreeOne(CALLS_ SpxObjHdr p);
+void SpxTryFreeOne(CALLS_ SpxMutableObjHdrs p);
 
 // free any objects on TheWheel that are no longer in use
 void SpxTryFreeSome(_CALLS_);
 
 #if 0
 // increment reference count of given object
-static inline int SpxObjRefIncr(SpxObjHdr p) {
+static inline int SpxObjRefIncr(SpxMutableObjHdrs p) {
 	return p && ++p->count;
 }
 #define SPX_OBJ_REF_INCR(struct_ptr) ({			\
@@ -189,7 +194,7 @@ static inline int SpxObjRefIncr(SpxObjHdr p) {
 #endif
 
 // decrement ref count of object's header, try to free it
-static inline int SpxObjRefDecr(CALLS_ SpxObjHdr p) {
+static inline int SpxObjRefDecr(CALLS_ SpxMutableObjHdrs p) {
 	CALLS_LINK();
 	// need new_count in case we deallocate *p
 	int new_count = p->count;
@@ -211,7 +216,7 @@ static inline int SpxObjRefDecr(CALLS_ SpxObjHdr p) {
 */
 #define SPX_OBJ_REF_DECR(struct_ptr) ({	\
 			__typeof__(struct_ptr) *pp = &(struct_ptr), p = *pp;	\
-			*pp = p && SpxObjRefDecr(CALL_ spx_obj_hdr(CALL_ (void *)p)) ? p : 0 ;							\
+			*pp = p && SpxObjRefDecr(CALL_ SpxMutableObjHdr(spx_obj_hdr(CALL_ (void *)p))) ? p : 0 ; \
 })
 
 /* * Schema Cache */
@@ -230,7 +235,26 @@ typedef const struct spx_schema {
 #ifndef _STRIP_META_
 	char name[0];									// '\0'-terminated & alignment padded
 #endif
-} *SpxSchemas;
+} *SpxSchemas, *const *SpxSchemasPtrs;
+
+
+// const_struct_ptr_ptr --> const struct const ptr ptr
+static inline SpxSchemasPtrs
+SpxSchemasPtr(SpxSchemas * const_struct_ptr_ptr) {
+	return (SpxSchemasPtrs) const_struct_ptr_ptr;
+}
+
+typedef struct spx_schema *SpxMutableSchemas;
+static inline SpxMutableSchemas
+SpxMutableSchema(SpxSchemas const_ptr) {
+	return (SpxMutableSchemas) const_ptr;
+}
+
+typedef SpxSchemas *SpxSchemasMutablePtrs;
+static inline SpxSchemasMutablePtrs
+SpxSchemasMutablePtr(SpxSchemasPtrs const_ptr_ptr) {
+	return (SpxSchemasMutablePtrs) const_ptr_ptr;
+}
 
 static inline bool SchemaNull(SpxSchemas s) {return !s||!s->oid;}
 
@@ -280,30 +304,36 @@ typedef const struct spx_schema_cache {
 	SpxSchemas by_oid[size];
 	struct spx_schema variable_length_schemas[size];
 #endif
-}*SpxSchemaCache;
+}*SpxSchemaCaches;
+
+typedef struct spx_schema_cache *SpxMutableSchemaCaches;
+static inline SpxMutableSchemaCaches
+SpxMutableSchemaCache(SpxSchemaCaches const_ptr) {
+	return (SpxMutableSchemaCaches) const_ptr;
+}
 
 // returns &by_name[0]
-static inline SpxSchemas *
-spx_schema_cache_by_name(SpxSchemaCache cache) {
+static inline SpxSchemasPtrs
+spx_schema_cache_by_name(SpxSchemaCaches cache) {
 	return (SpxSchemas *) cache->by_id + cache->max_id + 1;
 }
 
 // returns start of by_oid array
-static inline SpxSchemas *
-spx_schema_cache_by_oid(SpxSchemaCache cache) {
+static inline SpxSchemasPtrs
+spx_schema_cache_by_oid(SpxSchemaCaches cache) {
 	return spx_schema_cache_by_name(cache) + cache->size;
 }
 
 // returns start of schema arena
 static inline SpxSchemas
-spx_schema_cache_schemas(SpxSchemaCache cache) {
+spx_schema_cache_schemas(SpxSchemaCaches cache) {
 	return (SpxSchemas) (spx_schema_cache_by_oid(cache) + cache->size);
 }
 
 static inline SpxSchemas
 SpxSchemaById(CALLS_ int id) {
 	CALLS_LINK();
-	extern SpxSchemaCache Spx_Schema_Cache;
+	extern SpxSchemaCaches Spx_Schema_Cache;
 	CallAssert(
 		id >= Spx_Schema_Cache->min_id
 		&& id <= Spx_Schema_Cache->max_id
@@ -316,18 +346,24 @@ SpxSchemaById(CALLS_ int id) {
 SpxSchemas SpxSchemaByOid(CALLS_ SchemaOids oid);
 SpxSchemas SpxSchemaByName(CALLS_ StrPtr name);
 
-void SpxSchemaCacheCheck(CALLS_ SpxSchemaCache cache);
+void SpxSchemaCacheCheck(CALLS_ SpxSchemaCaches cache);
 
 /* * struct spx_schema_path */
 
 // variable-size
 typedef const struct spx_schema_path {
-	SpxSchemaCache schema_cache;
+	SpxSchemaCaches schema_cache;
 	int size;
 	SpxSchemas path[0];
-}*SpxSchemaPath;;
+} *SpxSchemaPaths;;
 
-void SpxSchemaPathCheck(CALLS_ SpxSchemaPath path);
+typedef struct spx_schema_path *SpxMutableSchemaPaths;
+static inline SpxMutableSchemaPaths
+SpxMutableSchemaPath(SpxSchemaPaths const_ptr) {
+	return (SpxMutableSchemaPaths) const_ptr;
+}
+
+void SpxSchemaPathCheck(CALLS_ SpxSchemaPaths path);
 
 int SpxLoadSchemaPath(_CALLS_);
 
@@ -501,6 +537,12 @@ typedef struct spx_type_oids {
 } SpxTypeOids;
 static inline bool TypeOidsNull(SpxTypeOids x) { return !x.type_oid; }
 
+typedef struct spx_type_oids *SpxMutableTypeOids;
+static inline SpxMutableTypeOids
+SpxMutableTypeOid(SpxTypeOids *const_ptr) {
+	return (SpxMutableTypeOids) const_ptr;
+}
+
 static inline SpxTypeOids SpxMkTypeOid(Oid o, Str s) {
 	return (struct spx_type_oids){o, s};
 }
@@ -545,7 +587,19 @@ typedef const struct spx_type {
 #ifndef _STRIP_META_
 	char name[0];
 #endif
-} *SpxTypes;
+} *SpxTypes, *const *SpxTypesPtrs;
+
+typedef struct spx_type *SpxMutableTypes;
+static inline SpxMutableTypes
+SpxMutableType(SpxTypes const_ptr) {
+	return (SpxMutableTypes) const_ptr;
+}
+
+typedef SpxTypes *SpxTypesMutablePtrs;
+static inline SpxTypesMutablePtrs
+SpxTypesMutablePtr(SpxTypesPtrs const_ptr) {
+	return (SpxTypesMutablePtrs) const_ptr;
+}
 
 static inline SpxTypeOids SpxTypeOid(SpxTypes t) {
 	return SpxMkTypeOid(t->oid, t->name);
@@ -573,11 +627,10 @@ static inline SpxTypes spx_type_next(SpxTypes type) {
 #define SPX_TYPE_VAL(type) Ptr2FieldsOr0((type),schema,id), PtrFieldOr0((type),oid)
 #endif
 
-typedef const struct spx_type_cache *SpxTypeCache;
 // variable-sized structure
-struct spx_type_cache {
-	SpxSchemaCache schema_cache;
-	SpxSchemaPath schema_path;	// needed?
+typedef const struct spx_type_cache {
+	SpxSchemaCaches schema_cache;
+	SpxSchemaPaths schema_path;	// needed?
 	int size;
 #if 1			// not really
 	SpxTypes by_name[0];
@@ -586,11 +639,12 @@ struct spx_type_cache {
 	SpxTypes by_oid[size];
 	struct spx_type variable_length_types[size];
 #endif
-};
+} *SpxTypeCache;
 
-static inline SpxTypes *
+static inline SpxTypesPtrs
 spx_type_cache_by_oid(SpxTypeCache cache) {
-	return (SpxTypes *) cache->by_name + cache->size;
+	return cache->by_name + cache->size;
+	//	return (SpxTypesPtrs) cache->by_name + cache->size;
 }
 
 // returns start of type arena
@@ -630,10 +684,15 @@ typedef const struct spx_proc {
 #endif
 } *SpxProcs;
 
-typedef struct spx_proc *SpxProcPtr; // prefer "SpxProcs" when possible!
+// is this used???
+typedef struct spx_proc *SpxMutableProcs;
+static inline SpxMutableProcs
+SpxMutableProc(SpxProcs const_ptr) {
+	return (SpxMutableProcs) const_ptr;
+}
 
-static inline SpxTypes *spx_proc_arg_types(SpxProcs proc) {
-	return (SpxTypes *) (proc->arg_type_oids + proc->max_args);
+static inline SpxTypesPtrs spx_proc_arg_types(SpxProcs proc) {
+	return (SpxTypesPtrs) (proc->arg_type_oids + proc->max_args);
 }
 
 static inline char *spx_proc_name(SpxProcs proc) {
@@ -714,8 +773,8 @@ static inline ProcInitResult SpxRequireQueryPlan(
 typedef const struct spx_proc_cache *SpxProcCache;
 // variable-sized structure
 struct spx_proc_cache {
-	SpxSchemaCache schema_cache;
-	SpxSchemaPath schema_path;	// needed?
+	SpxSchemaCaches schema_cache;
+	SpxSchemaPaths schema_path;	// needed?
 	SpxTypeCache type_cache;
 	int size;
 #if 1
@@ -739,8 +798,8 @@ void SpxProcCacheCheck(CALLS_ SpxProcCache cache);
 /* * Cache Management */
 
 typedef const struct spx_caches {
-	SpxSchemaCache schema_cache;
-	SpxSchemaPath schema_path;
+	SpxSchemaCaches schema_cache;
+	SpxSchemaPaths schema_path;
 	SpxTypeCache type_cache;
 	SpxProcCache proc_cache;
 } *SpxCaches;

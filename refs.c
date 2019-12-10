@@ -35,15 +35,13 @@ static const char refs_module_id[] = "$Id: ref.c,v 1.5 2007/07/24 04:27:48 greg 
 	 for convenient binary search.
  */
 
-typedef struct typed_object_method *TomPtr;
-typedef struct tom_cache *TomCachePtr;
-TomCachePtr Tom_Cache = 0;
+MutableTomCaches Tom_Cache = 0;
 
 extern void
-RefTomCacheCheck(CALLS_ RefTomCache cache) {
+RefTomCacheCheck(CALLS_ TomCaches cache) {
 	CALLS_LINK();
 	SpxCheckCaches(CALL_ &cache->spx_caches);
-	CallAssert(cache == Tom_Cache);
+	CallAssert(MutableTomCache(cache) == Tom_Cache);
 }
 
 static inline void TomCacheCheck(_CALLS_) {
@@ -52,10 +50,14 @@ static inline void TomCacheCheck(_CALLS_) {
 }
 
 static int
-cmp_toms(const void *const p1, const void *const p2) {
-	const Toms a = p1, b = p2;
+cmp_toms(const Toms a, const Toms b) {
 	const int cmp_ops = a->operation->oid - b->operation->oid;
 	return cmp_ops ? cmp_ops : a->tag - b->tag;
+}
+
+static int
+unsafe_cmp_toms(const void *const p1, const void *const p2) {
+	return cmp_toms(p1, p2);
 }
 
 /* WHAT WE WANT AND DO NOT HAVE!!!!
@@ -78,13 +80,13 @@ static Toms GetTom(CALLS_ SpxProcs op, ref_tags tag) {
 		fallback_tom = 0;
 		tom = bsearch(
 	&target, Tom_Cache->tom, Tom_Cache->size,
-	sizeof target, cmp_toms
+	sizeof target, unsafe_cmp_toms
 		);
 		if ( tom ) break;
 		fallback.operation = target.operation;
 		fallback_tom = bsearch(
 	&fallback, Tom_Cache->tom, Tom_Cache->size,
-	sizeof fallback, cmp_toms
+	sizeof fallback, unsafe_cmp_toms
 		);
 		if ( !fallback_tom ) break;
 		CALL_DEBUG_OUT(
@@ -154,7 +156,7 @@ FUNCTION_DEFINE(refs_op_tag_to_method) {
 	PG_RETURN_OID(tom->method->oid);
 }
 
-static TomCachePtr LoadToms(_CALLS_) {
+static TomCaches LoadToms(_CALLS_) {
 	enum {max_toms = MAX_PROCS * 2}; // not rigorous!!
 	static char select[] =
 		"SELECT DISTINCT tag_, operation_, method_"
@@ -168,29 +170,29 @@ static TomCachePtr LoadToms(_CALLS_) {
 	const int num_rows = SpxQueryDB(plan, NULL, MAX_PROCS);
 	int num_ops = 0;
 	SpxProcs last_op = 0;
-	TomCachePtr cache =
+	MutableTomCaches cache =
 		spx_obj_alloc(sizeof *cache + num_rows * sizeof *cache->tom);
 	cache->size = num_rows;
 	cache->spx_caches = SpxCurrentCaches();
-	TomPtr p = cache->tom, pp = p;
+	MutableToms p = cache->tom, pp = p;
 	for (; p < cache->tom + num_rows; pp = p++) {
 		int row = p - cache->tom;
 		p->tag = RowColTypedInt32(CALL_ row, tag_, RefTagIntType(), 0);
 		// tag is either in TOC or is -1 to indicate an op fallback
 		p->operation = SpxProcByOid(
-	CALL_ RowColTypedOid(CALL_ row, operation_, Procedure_Type, 0)
+			CALL_ RowColTypedOid(CALL_ row, operation_, Procedure_Type, 0)
 		);
 		if (last_op && last_op != p->operation)
 			++num_ops;
 		p->method = SpxProcByOid(
-	CALL_ RowColTypedOid(CALL_ row, method_, Procedure_Type, 0)
+			CALL_ RowColTypedOid(CALL_ row, method_, Procedure_Type, 0)
 		);
 		CallAssertMsg( cmp_toms(pp, p) <= 0,
 			 "pp " SPX_PROC_FMT REF_TAG_FMT
 			 "p " SPX_PROC_FMT REF_TAG_FMT,
 			 SPX_PROC_VAL(pp->operation), REF_TAG_VAL(pp->tag),
 			 SPX_PROC_VAL(p->operation), REF_TAG_VAL(p->tag) );
-		const TomPtr old_tom = (TomPtr) SameOldTom(CALL_ p); // to mutable !!
+		const MutableToms old_tom = MutableTom(SameOldTom(CALL_ p));
 		if ( old_tom && !SpxPlanNull(old_tom->plan) )
 			SPX_MOVE_PLAN(p->plan, old_tom->plan);
 	}
@@ -201,9 +203,9 @@ static TomCachePtr LoadToms(_CALLS_) {
 
 extern int RefLoadToms(_CALLS_) {
 	CALLS_LINK();
-	const TomCachePtr cache = LoadToms(_CALL_);
+	const TomCaches cache = LoadToms(_CALL_);
 	if ( Tom_Cache )
-		for ( TomPtr p = Tom_Cache->tom
+		for ( MutableToms p = Tom_Cache->tom
 			; p < Tom_Cache->tom + Tom_Cache->size ; p++ )
 			SPX_FREE_PLAN(p->plan);
 	SPX_OBJ_REF_DECR(Tom_Cache);
@@ -275,7 +277,7 @@ static Toms MethodForOpTagSpx(
 	const Oid arg_types[], int num_args_available
 ) {
 	CALL_LINK();
-	const TomPtr m = (TomPtr) GetTom(CALL_ op, tag); // const to mutable !!
+	const MutableToms m = MutableTom(GetTom(CALL_ op, tag)); // const to mutable !!
 	if (!m) return 0;		// inheritance here ??
 	RefRequireQueryPlan(
 		CALL_ m->method, SpxTypeOid(op->return_type),
@@ -331,6 +333,7 @@ static inline void NoValue(SpxText *text_ret, bool *null_ret) {
 	if (null_ret) *null_ret = true;
 }
 
+// Typed Object Method to Value
 static void TomToValue(
 	CALLS_ Toms tom, Datum *const args, int num_args,	// uses these
 	SpxText *text_ret,					// to either return this
@@ -364,26 +367,31 @@ static void TomToValue(
 
 /* * op method dispatch without wicci magic */
 
-// Why aren't we passing a CALLS link???
 static void RefEtcToValue(
-	PG_FUNCTION_ARGS /*fcinfo*/,		// we use this
-	SpxText *text_ret,				// to either return this
-	bool *null_ret, Datum *datum_ret	// or these
+	CALLS_
+	PG_FUNCTION_ARGS /*fcinfo*/,		// we dispatch this
+	SpxText *text_ret,	// to either return this and null_ret
+	bool *null_ret,			// required!
+  Datum *datum_ret		// or this and null_ret
 ) {
-	enum {ref_arg};
-	CALL_BASE();
+	enum {ref_arg};								// one required argument
+	CALL_LINK();
 	RefsRequired(_CALL_);
 	const int level = StartSPX(_CALL_);
 	const int num_args = SpxFuncNargs(fcinfo);
+	CallAssert(null_ret);
 	CallAssert(num_args > ref_arg );
 	CallAssert(!SpxFuncArgNull(fcinfo, ref_arg));
 	CallAssert(!SpxFuncReturnsSet(fcinfo));
 	const refs ref = GetArgRef(0);
+	// the op function is the function that called us
 	const SpxProcs op = SpxProcByOid(CALL_ SpxFuncOid(fcinfo));
+	// next 3 assertions difficult to violate since we're here
 	CallAssertMsg( op, "no operation proc for " SPX_PROC_OID_FMT,
 		 SPX_PROC_OID_VAL(SpxFuncOid(fcinfo)) );
 	CallAssert(num_args >= op->min_args );
 	CallAssert(num_args <= op->max_args );
+	// What method implements this operation?
 	const Toms tom = MethodForOpRefSpx(CALL_ op, ref, num_args);
 	CallAssertMsg( tom, "no method proc for " SPX_PROC_OID_FMT,
 		 SPX_PROC_OID_VAL(SpxFuncOid(fcinfo)) );
@@ -393,25 +401,24 @@ static void RefEtcToValue(
 		 CALL_ tom, args, SpxFuncNargs(fcinfo),
 		 text_ret, null_ret, datum_ret
 	);
-  // if ( DebugLevel() )
-  {
-		if (text_ret->varchar) {
-				char *const s = text_to_cstring(text_ret ->varchar);
-				WARN_OUT("%s: pre value %s", __func__, s ?: "NULL");
+	// Paranoid debugging!!!
+  if ( DebugLevel() && text_ret ) {
+		if ( text_ret->varchar) {
+				char *const s = text_to_cstring(text_ret->varchar);
+				CALL_WARN_OUT("s: pre value %s", s ?: "NULL");
 				pfree(s);
 		} else {
-				WARN_OUT("%s: pre value %s", __func__, "NULL");
+				CALL_WARN_OUT("s: pre value %s", "NULL");
 		}
 	}
 	FinishSPX(CALL_ level);
-  // if ( DebugLevel() )
-  {
-		if (text_ret->varchar) {
-				char *const s = text_to_cstring(text_ret ->varchar);
-				WARN_OUT("%s: value %s", __func__, s ?: "NULL");
+  if ( DebugLevel() && text_ret ) {
+		if ( text_ret->varchar) {
+				char *const s = text_to_cstring(text_ret->varchar);
+				CALL_WARN_OUT("s: value %s", s ?: "NULL");
 				pfree(s);
 		} else {
-				WARN_OUT("%s: value %s", __func__, "NULL");
+				CALL_WARN_OUT("s: value %s", "NULL");
 		}
 	}
 }
@@ -419,19 +426,21 @@ static void RefEtcToValue(
 /* Handles most text-returning operations, with exceptions:
  * type output
  * operations taking a crefs argument for wicci magic
+ * SIGNATURE: refs, ... -> NULL/cstring
+ * Extra args must be part of SQL method function definition
 */
 FUNCTION_DEFINE(call_text_method) {
 	SpxText value;
 	bool is_null;
 	CALL_BASE();
-	RefEtcToValue(fcinfo, &value, &is_null, 0);			//  RefsRequired
+	RefEtcToValue(CALL_ fcinfo, &value, &is_null, 0);		//  RefsRequired
 	if (is_null)
 		PG_RETURN_NULL();
 	CallAssert(value.varchar);
 	// if ( DebugLevel() )
 	{
 		char *const s = text_to_cstring(value.varchar);
-		WARN_OUT("%s: value %s", __func__, s ?: "NULL");
+		CALL_WARN_OUT("s: value %s", s ?: "NULL");
 		pfree(s);
 	}
 	PG_RETURN_TEXT_P(value.varchar);
@@ -439,11 +448,17 @@ FUNCTION_DEFINE(call_text_method) {
 
 /* Handles most scalar-returning operations, with exceptions:
  * type input
+ * SIGNATURE: refs -> NULL/Datum
+ * Extra args must be part of SQL method function definition
+ * Datum must represent a "Scalar" value, i.e.
+ * a non-pointer, non-composite value that fits in one word
+ * (Maybe 2-words on a 32-bit system??)
 */
 FUNCTION_DEFINE(call_scalar_method) {
 	bool is_null;
 	Datum value;
-	RefEtcToValue(fcinfo, 0, &is_null, &value);	// RefsRequired
+	CALL_BASE();
+	RefEtcToValue(CALL_ fcinfo, 0, &is_null, &value);	// RefsRequired
 	if ( is_null )
 		PG_RETURN_NULL();
 	PG_RETURN_DATUM(value);
@@ -451,10 +466,7 @@ FUNCTION_DEFINE(call_scalar_method) {
 
 /* * Class Management */
 
-// Pointers to non-const structures
-typedef struct typed_object_class *TocPtr;
-typedef struct toc_cache *TocCachePtr;
-TocCachePtr Toc_Cache = 0;
+MutableTocCaches Toc_Cache = 0;
 
 /* Classes are cached in a single heap allocation:
 
@@ -472,7 +484,7 @@ TocCachePtr Toc_Cache = 0;
  * The whole thing can be freed by free(ref_count).
  */
 
-extern void RefTocCacheCheck(CALLS_ RefTocCache cache) {
+extern void RefTocCacheCheck(CALLS_ TocCaches cache) {
 	CALLS_LINK();
 	SpxCheckCaches(CALL_ &cache->spx_caches);
 	RefTomCacheCheck(CALL_ cache->tom_cache);
@@ -484,7 +496,7 @@ static inline void TocCacheCheck(_CALLS_) {
 	RefTocCacheCheck(CALL_ Toc_Cache);
 }
 
-// Warning: within this module, result may be cast to TocPtr
+// Warning: within this module, result may be cast to MutableTocs
 static inline Tocs GetToc(CALLS_ ref_tags tag) {
 	CALLS_LINK();
 	CallAssertMsg(
@@ -634,7 +646,7 @@ FUNCTION_DEFINE(refs_debug_tocs_by_type) {
 	PG_RETURN_INT32( Toc_Cache->size );
 }
 
-static TocCachePtr LoadTocs(_CALLS_) {
+static TocCaches LoadTocs(_CALLS_) {
 	CALL_LINK();
 	CALL_DEBUG_OUT("==> LoadTocs");
 	static char select[] =
@@ -665,29 +677,15 @@ static TocCachePtr LoadTocs(_CALLS_) {
 
 	// make room for the results
 	// how might this go wrong if size != max_tag + 1 ???
-	TocCachePtr cache =
+	MutableTocCaches cache =
 		spx_obj_alloc( toc_cache_end(&toc) - (char *) &toc );
 	CallAssert(cache);
 	cache->size = toc.size;
 	cache->max_tag = toc.max_tag;
 	cache->spx_caches = SpxCurrentCaches();
 	cache->tom_cache = Tom_Cache;
-	// C doesn't have the const_cast operator of C++
-	// we will need to use a dangerous unrestricted  cast
-	// ultimately we'll want to use these ptr to ptr to struct variables
-	TocPtr *by_type = 0;					// no constness
-	TocPtr *by_class = 0;					// no constness
-	// assignment adding constness should give no warning
-	// this checks that type is same other than constness
-	// alas, gcc gives a warning - is this right??
-	TocsPtr const_by_type = by_type;
-	TocsPtr const_by_class = by_class;
-	//  get the values
-	const_by_type = toc_cache_by_type_tag_start(cache);
-	const_by_class = toc_cache_by_class_type_start(cache);
-	// Now cast away the const-ness of the underlying struct
-	by_type = (TocPtr*) const_by_type;
-	by_class = (TocPtr*) const_by_class;
+	MutableTocsPtrs by_type = MutableTocsPtr(toc_cache_by_type_tag_start(cache));
+	MutableTocsPtrs by_class = MutableTocsPtr(toc_cache_by_class_type_start(cache));
 	
 	Assert_SpxObjPtr_AtEnd( CALL_ cache, toc_cache_by_class_type_end(cache) );
 	for (int row = 0; row < toc.size; row++) {  // load rows
@@ -695,7 +693,7 @@ static TocCachePtr LoadTocs(_CALLS_) {
 		CallAssert(tag >= 0 && tag <= toc.max_tag);
 		Assert_SpxObjPtr_In(CALL_ cache, by_type);
 		Assert_SpxObjPtr_In(CALL_ cache, by_class);
-		const TocPtr toc = *by_class++ = *by_type++ = &cache->toc[tag];
+		MutableTocs toc = *by_class++ = *by_type++ = &cache->toc[tag];
 		Assert_SpxObjPtr_In(CALL_ cache, toc);
 		toc->tag = tag;
 		// CALL_DEBUG_OUT("row %d toc tag %d", row, toc->tag);
@@ -715,11 +713,11 @@ static TocCachePtr LoadTocs(_CALLS_) {
 	}
 	Assert_SpxObjPtr_AtEnd( CALL_ cache, by_class );
 	qsort(
-		toc_cache_by_type_tag_start(cache),			cache->size,
+		(void *) toc_cache_by_type_tag_start(cache),			cache->size,
 		sizeof *toc_cache_by_type_tag_start(cache),	cmp_tocs_by_type_tag
 	);
 	qsort(
-		toc_cache_by_class_type_start(cache),		cache->size,
+		(void *) toc_cache_by_class_type_start(cache),		cache->size,
 		sizeof *toc_cache_by_class_type_start(cache),	cmp_tocs_by_class_type
 	);
 	CALL_DEBUG_OUT("<== LoadTocs");
@@ -728,7 +726,7 @@ static TocCachePtr LoadTocs(_CALLS_) {
 
 extern int RefLoadTocs(_CALLS_) {
 	CALLS_LINK();
-	const TocCachePtr cache = LoadTocs(_CALL_);
+	const MutableTocCaches cache = LoadTocs(_CALL_);
 	SPX_OBJ_REF_DECR(Toc_Cache);
 	//	Toc_Cache = SPX_OBJ_REF_INCR(cache);
 	Toc_Cache = cache;

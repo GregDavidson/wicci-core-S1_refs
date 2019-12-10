@@ -38,15 +38,27 @@ typedef const struct typed_object_method {
 	SpxPlans plan;	// calls method with operation args
 } *Toms;
 
-typedef const struct tom_cache *RefTomCache;
+typedef struct typed_object_method *MutableToms;
+static inline MutableToms MutableTom(Toms const_ptr) {
+	return (MutableToms) const_ptr;
+}
+
 // variable-sized structure
-struct tom_cache {
+typedef const struct tom_cache {
 	struct spx_caches spx_caches;
 	int size;
 	struct typed_object_method tom[0];
-};
+} *TomCaches;
 
-void RefTomCacheCheck(CALLS_ RefTomCache cache);
+typedef struct tom_cache *MutableTomCaches;
+static inline MutableTomCaches MutableTomCache(TomCaches const_ptr) {
+	return (MutableTomCaches) const_ptr;
+}
+static inline TomCaches TomCache(MutableTomCaches ptr) {
+	return (TomCaches) ptr;
+}
+
+void RefTomCacheCheck(CALLS_ TomCaches cache);
 
 /* * Macros and Functions */
 
@@ -93,7 +105,7 @@ static inline void RefsRequired(_CALLS_) {
 /* C References (CRefs) are references to arbitrary C data structures
 	 which can be passed through PostgreSQL but are opaque to it.
 
-	 The crefs framework should be moved to Spx!!
+	 Should the crefs framework be moved to Spx??
 */
 
 typedef const struct crefs * CRefs;
@@ -408,14 +420,18 @@ typedef const struct typed_object_class {
 #if 0
 	TomDispatch *struct typed_object_method methods[0];
 #endif
-} *Tocs, **TocsPtr;
+} *Tocs, *const *TocsPtrs;
 
-// when would size != max_tag + 1?
-typedef const struct toc_cache *RefTocCache;
+typedef struct typed_object_class *MutableTocs;
+static inline MutableTocs MutableToc(Tocs const_ptr) {
+	return (MutableTocs) const_ptr;
+}
+
+// when would size != max_tag + 1??
 // variable-sized structure
-struct toc_cache {
+typedef const struct toc_cache {
 	struct spx_caches spx_caches;
-	RefTomCache tom_cache;
+	TomCaches tom_cache;
 	int size;
 	ref_tags max_tag;
 #if 1
@@ -428,36 +444,46 @@ struct toc_cache {
 	Tocs by_type_tag[size];		// sorted by (1) type oid, (1) tag
 	Tocs by_class_type[size];		// sorted by (1) class oid, (2) type oid
 #endif
-};
+} *TocCaches;
+
+typedef struct toc_cache *MutableTocCaches;
+static inline MutableTocCaches MutableTocCache(TocCaches const_ptr) {
+	return (MutableTocCaches) const_ptr;
+}
+
+typedef Tocs *MutableTocsPtrs;
+static inline MutableTocsPtrs MutableTocsPtr(TocsPtrs const_ptr) {
+	return (MutableTocsPtrs) const_ptr;
+}
 
 // return pointer to first struct
-static inline Tocs toc_cache_toc_start(RefTocCache cache) {
+static inline Tocs toc_cache_toc_start(TocCaches cache) {
 	return cache->toc; 
 }
 
 // return pointer just past last struct
-static inline Tocs toc_cache_toc_end(RefTocCache cache) {
+static inline Tocs toc_cache_toc_end(TocCaches cache) {
 	return toc_cache_toc_start(cache) + cache->max_tag + 1;
 }
 
 // return pointer to first struct pointer
-static inline TocsPtr toc_cache_by_type_tag_start(RefTocCache cache) {
-	return (TocsPtr) toc_cache_toc_end(cache);
+static inline TocsPtrs toc_cache_by_type_tag_start(TocCaches cache) {
+	return (TocsPtrs) toc_cache_toc_end(cache);
 }
 
-static inline TocsPtr toc_cache_by_type_tag_end(RefTocCache cache) {
+static inline TocsPtrs toc_cache_by_type_tag_end(TocCaches cache) {
 	return toc_cache_by_type_tag_start(cache) + cache->size;
 }
 
-static inline TocsPtr toc_cache_by_class_type_start(RefTocCache cache) {
+static inline TocsPtrs toc_cache_by_class_type_start(TocCaches cache) {
 	return toc_cache_by_type_tag_end(cache);
 }
 
-static inline TocsPtr toc_cache_by_class_type_end(RefTocCache cache) {
+static inline TocsPtrs toc_cache_by_class_type_end(TocCaches cache) {
 	return toc_cache_by_class_type_start(cache) + cache->size;
 }
 
-static inline char *toc_cache_end(RefTocCache cache) {
+static inline char *toc_cache_end(TocCaches cache) {
 	return (char *) toc_cache_by_class_type_end(cache);
 }
 
@@ -468,7 +494,7 @@ FUNCTION_DECLARE(refs_type_to_tag);				// reftype --> tag_arg INT32
 FUNCTION_DECLARE(refs_debug_tocs_by_tag); // void --> tocs_count INT32
 FUNCTION_DECLARE(refs_debug_tocs_by_type); // void --> tocs_count INT32
 
-void RefTocCacheCheck(CALLS_ RefTocCache cache);
+void RefTocCacheCheck(CALLS_ TocCaches cache);
 
 #ifndef REFS_C
 #include "last-tag.h"
