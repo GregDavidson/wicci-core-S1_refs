@@ -4,7 +4,7 @@
 \i ../settings+sizes.sql
 
 SELECT set_schema_path('s1_refs','s0_lib','public');
-SELECT spx_debug_on(); -- jgd debugging!!
+-- SELECT spx_debug_on(); -- jgd debugging!!
 SELECT ensure_schema_ready();
 -- these things don't really exist until part way through this schema
 -- so I've defined dummy versions of them that do nothing at the
