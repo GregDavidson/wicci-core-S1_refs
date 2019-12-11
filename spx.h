@@ -107,50 +107,62 @@ spx.c:
 
 // Return pointer to header under given object
 // Object MUST have been allocated with spx_obj_alloc
-static inline SpxObjHdrs spx_obj_hdr(CALLS_ void *spx_obj) {
+static inline SpxObjHdrs spx_obj_hdr(CALLS_ const void *spx_obj) {
 	CALLS_LINK();
 	SpxObjHdrs hdr = (SpxObjHdrs) spx_obj - 1;
 	CallAssert(hdr->the_wheel == &TheWheel);
 	return hdr;
 }
 
-static inline char *spx_obj_end(CALLS_ void *spx_obj) {
+static inline char *spx_obj_end(CALLS_ const void *spx_obj) {
 	CALLS_LINK();
 	SpxObjHdrs hdr = spx_obj_hdr(CALL_ spx_obj);
 	return hdr->end_ptr;
 }
 
-static inline bool SpxObjPtr_Valid(CALLS_ void *spx_obj, void *ptr) {
+static inline bool SpxObjPtr_Valid(
+	CALLS_ const void *spx_obj, const void *ptr
+) {
 	CALLS_LINK();
 	SpxObjHdrs hdr = spx_obj_hdr(CALL_ spx_obj);
 	return (char *) ptr >= hdr->object && (char *) ptr <= hdr->end_ptr;
 }
 
-static inline void Assert_SpxObjPtr_Valid(CALLS_ void *spx_obj, void *ptr) {
+static inline void Assert_SpxObjPtr_Valid(
+	CALLS_ const void *spx_obj, const void *ptr
+) {
 	CALLS_LINK();
 	CallAssert( SpxObjPtr_Valid(CALL_ spx_obj, ptr) );
 }
 
-static inline bool SpxObjPtr_In(CALLS_ void *spx_obj, void *ptr) {
+static inline bool SpxObjPtr_In(
+	CALLS_ const void *spx_obj, const void *ptr
+) {
 	CALLS_LINK();
 	Assert_SpxObjPtr_Valid(CALL_ spx_obj, ptr);
 	SpxObjHdrs hdr = spx_obj_hdr(CALL_ spx_obj);
 	return  (char *) ptr >= hdr->object && (char *) ptr < hdr->end_ptr;
 }
 
-static inline void Assert_SpxObjPtr_In(CALLS_ void *spx_obj, void *ptr) {
+static inline void Assert_SpxObjPtr_In(
+	CALLS_ const void *spx_obj, const void *ptr
+) {
 	CALLS_LINK();
 	CallAssert( SpxObjPtr_In(CALL_ spx_obj, ptr) );
 }
 
-static inline bool SpxObjPtr_AtEnd(CALLS_ void *spx_obj, void *ptr) {
+static inline bool SpxObjPtr_AtEnd(
+	CALLS_ const void *spx_obj, const void *ptr
+) {
 	CALLS_LINK();
 	Assert_SpxObjPtr_Valid(CALL_ spx_obj, ptr);
 	SpxObjHdrs hdr = spx_obj_hdr(CALL_ spx_obj);
 	return hdr->end_ptr == (char *) ptr;
 }
 
-static inline void Assert_SpxObjPtr_AtEnd(CALLS_ void *spx_obj, void *ptr) {
+static inline void Assert_SpxObjPtr_AtEnd(
+	CALLS_ const void *spx_obj, const void *ptr
+) {
 	CALLS_LINK();
 #if 1		// extra feedback if it bombs!!
 	SpxObjHdrs hdr = spx_obj_hdr(CALL_ spx_obj);
@@ -188,7 +200,7 @@ static inline int SpxObjRefIncr(SpxMutableObjHdrs p) {
 	return p && ++p->count;
 }
 #define SPX_OBJ_REF_INCR(struct_ptr) ({			\
-			SpxObjRefIncr(spx_obj_hdr(CALL_ (void *)struct_ptr));	\
+			SpxObjRefIncr(spx_obj_hdr(CALL_ (const void *)struct_ptr));	\
 			struct_ptr;																		\
 })
 #endif
@@ -239,10 +251,10 @@ typedef const struct spx_schema {
 
 
 // const_struct_ptr_ptr --> const struct const ptr ptr
-static inline SpxSchemasPtrs
-SpxSchemasPtr(SpxSchemas * const_struct_ptr_ptr) {
-	return (SpxSchemasPtrs) const_struct_ptr_ptr;
-}
+/* static inline SpxSchemasPtrs */
+/* SpxSchemasPtr(SpxSchemas * const_struct_ptr_ptr) { */
+/* 	return (SpxSchemasPtrs) const_struct_ptr_ptr; */
+/* } */
 
 typedef struct spx_schema *SpxMutableSchemas;
 static inline SpxMutableSchemas

@@ -451,9 +451,10 @@ static inline MutableTocCaches MutableTocCache(TocCaches const_ptr) {
 	return (MutableTocCaches) const_ptr;
 }
 
-typedef Tocs *MutableTocsPtrs;
-static inline MutableTocsPtrs MutableTocsPtr(TocsPtrs const_ptr) {
-	return (MutableTocsPtrs) const_ptr;
+typedef Tocs *TocsMutablePtrs;
+typedef const struct typed_object_class **TocsMutablePtrs;
+static inline TocsMutablePtrs TocsMutablePtr(TocsPtrs const_ptr) {
+	return (TocsMutablePtrs) const_ptr;
 }
 
 // return pointer to first struct

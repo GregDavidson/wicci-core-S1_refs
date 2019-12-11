@@ -563,9 +563,7 @@ static SpxSchemaPaths LoadSchemaPath(_CALLS_) {
 	sp->size = num_rows;
 	sp->schema_cache = Spx_Schema_Cache;
 	CallAssert(num_rows <= sp->schema_cache->size);
-	// warning: initialization from incompatible pointer type
-	// huh???
-	SpxSchemasMutablePtrs *path_ptr = sp->path;
+	SpxSchemasMutablePtrs path_ptr = sp->path;
 	int row;
 	for (row = 0; row < num_rows; row++) {
 		const int id = RowColTypedInt32(CALL_ row, id_, Int32_Type, NULL);
@@ -578,8 +576,6 @@ static SpxSchemaPaths LoadSchemaPath(_CALLS_) {
 		CallAssertMsg(s, "No schema with id %d", id);
 		CallAssertMsg(s->oid, "No schema oid for id %d", id);
 		CALL_DEBUG_OUT("row %d schema %d %d %s", row, s->id, s->oid, s->name);
-		// warning: assignment from incompatible pointer type
-		// huh???
 		*path_ptr++ = s;
 	}
 	Assert_SpxObjPtr_AtEnd(CALL_ sp, path_ptr );
@@ -674,7 +670,7 @@ extern int SpxLoadSchemas(_CALLS_) {
 SpxSchemas SchemaById(int id) {
 	struct spx_schema target, *target_ptr = &target;
 	target.id = id;
-	SpxSchemas *p = bsearch(
+	SpxSchemas *p = /* unsafe cast */ bsearch(
 	&target_ptr,
 	Spx_Schemas_By_Id,
 	Schema_Array_Len,
@@ -690,7 +686,7 @@ static SpxSchemas SchemaByOid(
 ) {
 	struct spx_schema target, *const target_ptr = &target;
 	target.oid = oid;
-	SpxSchemas *const p = bsearch(
+	SpxSchemas *const p = /* unsafe cast */ bsearch(
 	&target_ptr,
 	spx_schema_cache_by_oid(cache),
 	cache->size,
@@ -708,7 +704,7 @@ extern SpxSchemas SpxSchemaByOid(CALLS_ Oid oid) {
 static SpxSchemas SchemaByName(
 	CALLS_ StrPtr name, SpxSchemaCaches cache
 ) {
-	SpxSchemas *const p = bsearch(
+	SpxSchemas *const p = /* unsafe cast */ bsearch(
 	name,
 	spx_schema_cache_by_name(cache),
 	cache->size,
@@ -880,7 +876,7 @@ extern int SpxLoadTypes(_CALLS_) {
 extern SpxTypes TypeByOid(CALLS_ Oid oid, SpxTypeCache cache) {
 	struct spx_type target, *const target_ptr = &target;
 	target.oid = oid;
-	SpxTypes *const p = bsearch(
+	SpxTypes *const p = /* unsafe cast */ bsearch(
 		&target_ptr, spx_type_cache_by_oid(cache), cache->size,
 		sizeof *spx_type_cache_by_oid(cache), cmp_types_by_oid
 	);
@@ -894,7 +890,7 @@ extern SpxTypes SpxTypeByOid(CALLS_ Oid oid) {
 }
 
 static SpxTypes TypeByName(CALLS_ StrPtr name, SpxTypeCache cache) {
-	SpxTypes *const p = bsearch(
+	SpxTypes *const p = /* unsafe cast */ bsearch(
 	name, cache->by_name, cache->size,
 	sizeof *cache->by_name, cmp_name_with_type
 	);
@@ -1222,7 +1218,7 @@ static SpxProcCache LoadProcs(_CALLS_) {
 			CallAssert( SpxTypesMutablePtr(spx_proc_arg_types(p))[n] =
 		SpxTypeByOid(CALL_ p->arg_type_oids[n]) );
 		*by_name++ =  *by_oid++ = p;
-		p = spx_proc_end(CALL_ p, name_size); // includes checking & debugging
+		p = SpxMutableProc(spx_proc_end(CALL_ p, name_size)); // includes checking & debugging
 	}
 	CallAssertMsg(
 								SpxObjPtr_AtEnd(CALL_ cache, p),
@@ -1260,7 +1256,7 @@ extern int SpxLoadProcs(_CALLS_) {
 static SpxProcs ProcByOid(CALLS_ Oid oid, SpxProcCache cache) {
 	struct spx_proc target, *const target_ptr = &target;
 	target.oid = oid;
-	SpxProcs *const p = bsearch(
+	SpxProcs *const p = /* unsafe cast */ bsearch(
 	&target_ptr, spx_proc_cache_by_oid(cache), cache->size,
 	sizeof (SpxProcs), cmp_procs_by_oid
 	);
@@ -1274,7 +1270,7 @@ extern SpxProcs SpxProcByOid(CALLS_ Oid oid) {
 }
 
 static SpxProcs ProcByName(CALLS_ StrPtr name, SpxProcCache cache) {
-	SpxProcs *const p = bsearch(
+	SpxProcs *const p = /* unsafe cast */ bsearch(
 		name, cache->by_name, cache->size,
 		sizeof *cache->by_name, cmp_name_with_proc
 	);
@@ -1527,9 +1523,9 @@ FUNCTION_DEFINE(spx_debug_schemas) {
 		}
 	}
 	CALL_DEBUG_OUT("Schemas By Oid:");
-	SpxSchemas *s;
+	SpxSchemasPtrs s;
 	Oid max_oid = 0;
-	SpxSchemas *const by_oid = spx_schema_cache_by_oid(c);
+	SpxSchemasPtrs by_oid = spx_schema_cache_by_oid(c);
 	for ( s = by_oid ; s < by_oid + c->size ; s++ ) {
 		CALL_DEBUG_OUT(
 	"Schema id = %2d, oid = %6d, name = %s",
@@ -1540,7 +1536,7 @@ FUNCTION_DEFINE(spx_debug_schemas) {
 	}
 	CALL_DEBUG_OUT("Schemas By Name:");
 	StrPtr max_name = "";
-	SpxSchemas *const by_name = spx_schema_cache_by_name(c);
+	SpxSchemasPtrs by_name = spx_schema_cache_by_name(c);
 	for (s = by_name ; s < by_name+c->size ; s++ ) {
 		CALL_DEBUG_OUT(
 	"Schema id = %2d, oid = %6d, name = %s",
@@ -1591,7 +1587,7 @@ FUNCTION_DEFINE(spx_debug_types) {
 	CALL_DEBUG_OUT("Types By Oid:");
 	const SpxTypes *p;
 	Oid max_oid = 0;
-	SpxTypes *const by_oid = spx_type_cache_by_oid(c);
+	SpxTypesPtrs by_oid = spx_type_cache_by_oid(c);
 	for ( p = by_oid ; p < by_oid + c->size ; p++ ) {
 		CALL_DEBUG_OUT(
 	"Type oid = %6d, name = %s",

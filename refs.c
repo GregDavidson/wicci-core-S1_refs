@@ -78,13 +78,13 @@ static Toms GetTom(CALLS_ SpxProcs op, ref_tags tag) {
 	for (;;) {
 		target.operation = fallback_tom->method;
 		fallback_tom = 0;
-		tom = bsearch(
+		tom = /* unsafe cast */ bsearch(
 	&target, Tom_Cache->tom, Tom_Cache->size,
 	sizeof target, unsafe_cmp_toms
 		);
 		if ( tom ) break;
 		fallback.operation = target.operation;
-		fallback_tom = bsearch(
+		fallback_tom = /* unsafe cast */ bsearch(
 	&fallback, Tom_Cache->tom, Tom_Cache->size,
 	sizeof fallback, unsafe_cmp_toms
 		);
@@ -210,7 +210,7 @@ extern int RefLoadToms(_CALLS_) {
 			SPX_FREE_PLAN(p->plan);
 	SPX_OBJ_REF_DECR(Tom_Cache);
 	//	Tom_Cache = SPX_OBJ_REF_INCR(cache);
-	Tom_Cache = cache;
+	Tom_Cache = MutableTomCache(cache);
 	return cache->size;
 }
 
@@ -526,8 +526,8 @@ static int cmp_tocs_by_type(const void *const p1, const void *const p2) {
 static Tocs FirstTocByType(CALLS_ SpxTypes type) {
 	struct typed_object_class target, *const target_ptr = &target;
 	target.type = type;
-	Tocs *const start = toc_cache_by_type_tag_start(Toc_Cache);
-	Tocs *p = bsearch(
+	TocsPtrs start = toc_cache_by_type_tag_start(Toc_Cache);
+	Tocs *p = /* unsafe cast */ bsearch(
 	&target_ptr, start, Toc_Cache->size, sizeof *start,
 	cmp_tocs_by_type
 	);
@@ -583,8 +583,8 @@ static Tocs TocByTableType(CALLS_ Oid table, SpxTypes type) {
 	struct typed_object_class target, *const target_ptr = &target;
 	target.table = table;
 	target.type = type;
-	Tocs *const start = toc_cache_by_class_type_start(Toc_Cache);
-	Tocs *p = bsearch(
+	TocsPtrs start = toc_cache_by_class_type_start(Toc_Cache);
+	Tocs *p = /* unsafe cast */ bsearch(
 		&target_ptr, start,
 		Toc_Cache->size,
 		sizeof *start,
@@ -639,9 +639,9 @@ FUNCTION_DEFINE(refs_debug_tocs_by_type) {
 		CALL_DEBUG_OUT("Toc_Cache NULL");
 		PG_RETURN_INT32( -1 );
 	}
-	Tocs *const start = toc_cache_by_type_tag_start(Toc_Cache);
-	Tocs *const end = toc_cache_by_type_tag_end(Toc_Cache);
-	for (Tocs *p = start; p < end ; p++ )
+	TocsPtrs start = toc_cache_by_type_tag_start(Toc_Cache);
+	TocsPtrs end = toc_cache_by_type_tag_end(Toc_Cache);
+	for (TocsPtrs p = start; p < end ; p++ )
 		DebugToc(CALL_ *p);
 	PG_RETURN_INT32( Toc_Cache->size );
 }
@@ -684,8 +684,8 @@ static TocCaches LoadTocs(_CALLS_) {
 	cache->max_tag = toc.max_tag;
 	cache->spx_caches = SpxCurrentCaches();
 	cache->tom_cache = Tom_Cache;
-	MutableTocsPtrs by_type = MutableTocsPtr(toc_cache_by_type_tag_start(cache));
-	MutableTocsPtrs by_class = MutableTocsPtr(toc_cache_by_class_type_start(cache));
+	Tocs *by_type = TocsMutablePtr(toc_cache_by_type_tag_start(cache));
+	Tocs *by_class = TocsMutablePtr(toc_cache_by_class_type_start(cache));
 	
 	Assert_SpxObjPtr_AtEnd( CALL_ cache, toc_cache_by_class_type_end(cache) );
 	for (int row = 0; row < toc.size; row++) {  // load rows
@@ -693,7 +693,8 @@ static TocCaches LoadTocs(_CALLS_) {
 		CallAssert(tag >= 0 && tag <= toc.max_tag);
 		Assert_SpxObjPtr_In(CALL_ cache, by_type);
 		Assert_SpxObjPtr_In(CALL_ cache, by_class);
-		MutableTocs toc = *by_class++ = *by_type++ = &cache->toc[tag];
+		Tocs const_toc = *by_class++ = *by_type++ = &cache->toc[tag];
+		MutableTocs toc = MutableToc(const_toc);
 		Assert_SpxObjPtr_In(CALL_ cache, toc);
 		toc->tag = tag;
 		// CALL_DEBUG_OUT("row %d toc tag %d", row, toc->tag);
@@ -726,10 +727,10 @@ static TocCaches LoadTocs(_CALLS_) {
 
 extern int RefLoadTocs(_CALLS_) {
 	CALLS_LINK();
-	const MutableTocCaches cache = LoadTocs(_CALL_);
+	const TocCaches cache = LoadTocs(_CALL_);
 	SPX_OBJ_REF_DECR(Toc_Cache);
 	//	Toc_Cache = SPX_OBJ_REF_INCR(cache);
-	Toc_Cache = cache;
+	Toc_Cache = MutableTocCache(cache);
 	return cache->size;
 }
 
