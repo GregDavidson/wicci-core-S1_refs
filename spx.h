@@ -30,8 +30,10 @@
 #include <executor/spi.h>
 #include <utils/array.h>
 // Need cstring <-> text utilities
-// also inclues fmgr.h and other goodies:
+// also includes fmgr.h and other goodies:
 #include <utils/builtins.h>
+#include <access/tuptoaster.h>
+// for toast_raw_datum_size
 
 #include "str.h"	   // typedefs clarify '\0' terminated strings
 #include "array.h"	   // macros for C arrays
@@ -406,7 +408,7 @@ typedef struct {
 #if 0
 	Oid arg_type_oids[0];
 #if 0				// if C were really smart!
-	char sq[0]l;			// follows arg_type_oids[num_args]
+	char sql[0];			// follows arg_type_oids[num_args]
 #endif
 #endif
 } SpxPlans, *SpxPlanPtr;
@@ -1269,7 +1271,7 @@ int64 SpxUpdateIfInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids *, int64 or_el
 // These are fine but unused
 bool SpxUpdateBool(CALLS_ SpxPlans, Datum args[], bool *null_ret);
 StrPtr SpxUpdateStr(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
-SpxText SpxUpdateText(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
+SpxText SpxUpdateText(CALLS_ SpxPlans, Datum args[], bool *null_ret);
 #endif
 
 // Execute a read-only query plan
@@ -1310,7 +1312,7 @@ int64 RowColIfTypeInt64(CALLS_ int row, int col, SpxTypeOids *type_ret, int64 or
 bool RowColBool(CALLS_ int row, int col, bool *null_ret);
 StrPtr RowColStrPtr(CALLS_ int row, int col);  // fragile!!! why???
 StrPtr RowColStr(CALLS_ int row, int col, ALLOCATOR_PTR(alloc));
-SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc));
+SpxText RowColText(CALLS_ int row, int col, bool *is_null_ret);
 size_t RowColTextLen(CALLS_ int row, int col, bool *is_null_ret);
 size_t RowColTextCopy(
 	CALLS_ int row, int col, char *buffer, size_t buffer_size, bool *is_null_ret
@@ -1333,7 +1335,7 @@ int64 SpxQueryIfInt64(CALLS_ SpxPlans, Datum args[], SpxTypeOids *, int64 or_els
 bool SpxQueryBool(CALLS_ SpxPlans, Datum args[], bool *null_ret);
 #endif
 StrPtr SpxQueryStr(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
-SpxText SpxQueryText(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
+SpxText SpxQueryText(CALLS_ SpxPlans, Datum args[], bool *null_ret);
 
 /* Unplanned Queries */
 
@@ -1437,7 +1439,24 @@ SpxArrayInfo SpxGetArray(
 	CALLS_ ArrayType *, bool isnull, SpxArrayInfo, ALLOCATOR_PTR(alloc)
 );
 
-/* Major Functions */
+/* ** Fancy PG Functions */
+
+// You MUST only pass Datums of type text!
+static inline size_t SpxTextOctetLen(Datum text_datum) {
+	/* We need not detoast the input according to
+	 * backend/utils/adt/varlena.c textoctetlen()
+	 */
+	return toast_raw_datum_size(text_datum) - VARHDRSZ;
+}
+
+// call it within a block, buffer goes on the stack,
+// string lasts for duration of that block!
+#define TEXT_BUFFER_TMP_STR(text_datum, buffer_name)		\
+	const size_t buffer_name ## _len = SpxTextOctetLen((text_datum));		\
+	char buffer_name [buffer_name ## _len + 1];		\
+	text_to_cstring_buffer(DatumGetTextPP((text_datum)), buffer_name, sizeof buffer_name);
+
+/* ** Major Functions */
 
 FUNCTION_DECLARE(spx_init);
 FUNCTION_DECLARE(spx_initialized);

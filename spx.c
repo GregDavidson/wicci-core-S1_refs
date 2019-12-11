@@ -19,12 +19,10 @@ static const char spx_version[] = "$Id: spx.c,v 1.3 2007/07/24 04:27:47 greg Exp
 #include "spx.h"
 #include <utils/hsearch.h>
 #include <utils/lsyscache.h>
-#include <access/tuptoaster.h>
-// for toast_raw_datum_size
 #define MODULE_TAG(name) spx_##name
 #include "debug-spx.h"
 #include "catalog/pg_type.h"
-#include <fmgr.h>		// for argument/result macros
+// #include <fmgr.h>		// for argument/result macros // in utils/builtins.h in spx.h
 #include <ctype.h>
 #include <locale.h>
 #include <libpq/pqformat.h>	//  for send/recv functions
@@ -117,7 +115,7 @@ extern void SpxTryFreeSome(_CALLS_) {
 	CALL_LINK();
 	// SpxMutableObjHdrs p, next;
 	CALL_WARN_OUT("Declining to FreeSome");
-	#if 0
+#if 0
 	for (SpxMutableObjHdrs next, p = TheWheel.next; p != &TheWheel; p = next) {
 		next = p->next;
 		SpxTryFreeOne(CALL_ p);
@@ -1742,8 +1740,10 @@ extern Datum RowColDatum( CALLS_ const int row, const int col,
 		SPI_fname(SPI_tuptable->tupdesc, col1),		// field name
 		SPI_gettype(SPI_tuptable->tupdesc, col1)	// type name
 	);
-	if ( *is_null_ptr )
+	if ( *is_null_ptr ) {
 		CALL_DEBUG_OUT( "%d, %d -> NULL", row, col );
+		CallAssert(is_null_ret);
+	}
 	return result;
 }
 
@@ -1752,13 +1752,15 @@ extern Datum RowColDatum( CALLS_ const int row, const int col,
 extern Datum RowColTypedDatum( CALLS_ int row, int col,
 			 SpxTypeOids expected_type, bool *is_null_ret ) {
 	CALL_LINK();
+	bool is_null, *const is_null_ptr = is_null_ret ?: &is_null;
 	SpxTypeOids result_type;
-	const Datum d = RowColDatum(CALL_ row, col, &result_type, is_null_ret);
+	const Datum d = RowColDatum(CALL_ row, col, &result_type, is_null_ptr);
 	CallAssertMsg(
 		result_type.type_oid == expected_type.type_oid,
 		"row %d, col %d, result_type %d, expected_type %d",
 		row, col, result_type.type_oid, expected_type.type_oid
 	);
+	if (*is_null_ptr)	CallAssert(is_null_ret);
 	return d;
 }
 
@@ -1883,6 +1885,7 @@ extern StrPtr RowColStr(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
 	return alloc ? NewStr( CALL_ s, alloc ) : s;
 }
 
+#if 0
 // Deprecated!
 // This seems to be quite a mess!!  We're not even using alloc!!
 extern SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
@@ -1898,13 +1901,32 @@ extern SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
   }
 	return (SpxText){tp};
 }
+#endif
 
-// You MUST only pass Datums of type text!
-static inline size_t SpxTextOctetLen(Datum text_datum) {
-	/* We need not detoast the input according to
-	 * backend/utils/adt/varlena.c textoctetlen()
-	 */
-	return toast_raw_datum_size(text_datum) - VARHDRSZ;
+extern SpxText RowColText(CALLS_ int row, int col, bool *is_null_ret) {
+	CALL_LINK();
+	CallAssert(is_null_ret);
+	SpxTypeOids result_type;
+	SpxText ret;
+	const Datum d = RowColDatum(CALL_ row, col, &result_type, is_null_ret);
+	if ( !*is_null_ret && result_type.type_oid != Text_Type.type_oid ) {
+		CALL_WARN_OUT("actual regtype is %d", result_type.type_oid);
+		*is_null_ret = 1;
+		ret.varchar = 0;
+		return ret;
+	}
+	ret.varchar = DatumGetTextPP(d);
+	if (*is_null_ret != !ret.varchar) // equivalent??
+		CALL_WARN_OUT("is_null_ret %d, ret: %p", *is_null_ret, ret.varchar);
+	if ( DebugLevel() ) {
+		if ( *is_null_ret )
+			CALL_DEBUG_OUT("--> NULL");
+		else {
+			TEXT_BUFFER_TMP_STR(d, str)
+			CALL_DEBUG_OUT("--> %s", str);
+		}
+	}
+	return ret;
 }
 
 // Returns 0 for NULL
@@ -2093,7 +2115,7 @@ extern SpxText SpxUpdateText(
 ) {
 	CALLS_LINK();
 	Update1(CALL_ plan, args);
-	return RowColText(CALL_ 0, 0, alloc);
+	return RowColText(CALL_ 0, 0, is_null_ret);
 }
 #endif
 
@@ -2126,11 +2148,10 @@ extern Datum SpxQueryTypedDatum( CALLS_ SpxPlans plan, Datum args[],
 
 // execute a query plan returning a VarChar or NULL result_type
 SpxText 
-SpxQueryText(CALLS_ SpxPlans plan, Datum args[], ALLOCATOR_PTR(alloc)
-) {
+SpxQueryText(CALLS_ SpxPlans plan, Datum args[], bool *is_null_ret) {
 	CALLS_LINK();
 	Query1(CALL_ plan, args);
-	return RowColText(CALL_ 0, 0, alloc);
+	return RowColText(CALL_ 0, 0, is_null_ret);
 }
 
 // execute a query plan returning an oid

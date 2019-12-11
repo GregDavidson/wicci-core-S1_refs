@@ -329,40 +329,28 @@ Datum CallMethod(CALLS_ Toms tom, Datum args[], bool *null_ret) {
 
 // Should we let someone know if either or both pointers are NULL??
 static inline void NoValue(SpxText *text_ret, bool *null_ret) {
-	if ( text_ret )  *text_ret = SpxTextNull();
+	if (text_ret) *text_ret = SpxTextNull();
 	if (null_ret) *null_ret = true;
 }
 
 // Typed Object Method to Value
 static void TomToValue(
-	CALLS_ Toms tom, Datum *const args, int num_args,	// uses these
-	SpxText *text_ret,					// to either return this
-	bool *null_ret, Datum *datum_ret		// or these
+	CALLS_ Toms tom, Datum *const args, int num_args, // we dispatch this
+	SpxText *text_ret,		// to either return text_ret and is_null_ret
+	bool *is_null_ret,		// required!
+ Datum *datum_ret				// or datum_ret and is_null_ret
 ) {
 	CALL_LINK();
-	AssertSPX(_CALL_);
-	CallAssert(!!text_ret != !!datum_ret);
-	if (!tom)
-		NoValue( text_ret, null_ret );
-	else if ( text_ret )	{
-			*text_ret = SpxQueryText(CALL_ tom->plan, args, call_SPI_palloc);
-			if ( null_ret )
-				*null_ret = !text_ret->varchar;
-		  // if ( DebugLevel() )
-			{
-				if (text_ret->varchar) {
-						char *const s = text_to_cstring(text_ret ->varchar);
-						WARN_OUT("%s: value %s", __func__, s ?: "NULL");
-						pfree(s);
-				} else {
-					WARN_OUT("%s: value %s", __func__, "NULL");
-				}
-			}
-		}
-	else if ( datum_ret ) {
-		CallAssert(null_ret);
-		*datum_ret = CallMethod(CALL_ tom, args, null_ret);
-	}
+	AssertSPX( _CALL_ );
+	CallAssert( is_null_ret );
+	CallAssert( !!text_ret != !!datum_ret );
+	if (!tom) {
+		NoValue( text_ret, is_null_ret );
+		CALL_WARN_OUT("No TOM");
+	}	else if ( text_ret )
+		*text_ret = SpxQueryText(CALL_ tom->plan, args, is_null_ret);
+	else
+		*datum_ret = CallMethod(CALL_ tom, args, is_null_ret);
 }
 
 /* * op method dispatch without wicci magic */
@@ -437,12 +425,6 @@ FUNCTION_DEFINE(call_text_method) {
 	if (is_null)
 		PG_RETURN_NULL();
 	CallAssert(value.varchar);
-	// if ( DebugLevel() )
-	{
-		char *const s = text_to_cstring(value.varchar);
-		CALL_WARN_OUT("s: value %s", s ?: "NULL");
-		pfree(s);
-	}
 	PG_RETURN_TEXT_P(value.varchar);
 }
 
