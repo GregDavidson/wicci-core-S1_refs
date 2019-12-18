@@ -28,7 +28,7 @@ AS 'spx.so', 'call_in_method' LANGUAGE 'c' STRICT;
 
 CREATE OR REPLACE
 FUNCTION name_out_op(name_refs) RETURNS cstring
-AS 'spx.so', 'call_out_method' LANGUAGE 'c' IMMUTABLE;
+AS 'spx.so', 'call_out_method' LANGUAGE 'c' STRICT IMMUTABLE;
 
 CREATE TYPE name_refs (
 	input = name_in_op,

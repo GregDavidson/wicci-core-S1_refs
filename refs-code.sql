@@ -430,7 +430,7 @@ COMMENT ON FUNCTION refs_ready() IS '
 
 CREATE OR REPLACE
 FUNCTION unsafe_refs_initialize() RETURNS cstring
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION refs_ready() RETURNS regprocedure[] AS $$
@@ -447,7 +447,7 @@ COMMENT ON FUNCTION refs_ready() IS '
 
 CREATE OR REPLACE
 FUNCTION refs_initialized() RETURNS bool
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION ensure_schema_ready() RETURNS text AS $$

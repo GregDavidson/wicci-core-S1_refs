@@ -402,6 +402,7 @@ int SpxLoadSchemaPath(_CALLS_);
 		meta-data.
  */
 // was a variable-sized structure
+// deviates from normal typedef const struct NAME ... *NamePtr; ... !!
 typedef struct {
 	void *plan;
 	int num_args;	// for safety check
@@ -412,6 +413,9 @@ typedef struct {
 #endif
 #endif
 } SpxPlans, *SpxPlanPtr;
+
+static inline SpxPlanPtr SpxMutablePlan(const SpxPlans *p) { return (SpxPlanPtr) p; }
+
 static inline bool SpxPlanNull(SpxPlans p) { return !p.plan; }
 static inline bool SpxPlanNargs(SpxPlans p) { return p.num_args; }
 
@@ -474,6 +478,10 @@ static inline SpxText SpxTextNull(void) {
 }
 
 static inline bool SpxTextIsNull(SpxText t) { return !t.varchar; }
+
+static inline struct varlena *SpxMutableVarlenaPtr(const struct varlena *cvp) {
+	return (struct varlena *) cvp;
+}
 
 #if 0
 
@@ -696,7 +704,7 @@ typedef const struct spx_proc {
 	char name[ word_align( strlen(name)+1 ) ];
 #endif
 #endif
-} *SpxProcs;
+} *SpxProcs, *const *SpxProcsPtrs;
 
 // is this used???
 typedef struct spx_proc *SpxMutableProcs;
@@ -705,11 +713,17 @@ SpxMutableProc(SpxProcs const_ptr) {
 	return (SpxMutableProcs) const_ptr;
 }
 
-static inline SpxTypesPtrs spx_proc_arg_types(SpxProcs proc) {
+typedef SpxProcs *SpxMutableProcsPtrs;
+static inline SpxMutableProcsPtrs
+SpxMutableProcsPtr(SpxProcsPtrs const_ptr) {
+	return (SpxMutableProcsPtrs) const_ptr;
+}
+
+static inline SpxTypesPtrs spx_proc_arg_types(const SpxProcs proc) {
 	return (SpxTypesPtrs) (proc->arg_type_oids + proc->max_args);
 }
 
-static inline char *spx_proc_name(SpxProcs proc) {
+static inline char *spx_proc_name(const SpxProcs proc) {
 	return (char *) (spx_proc_arg_types(proc) + proc->max_args);
 }
 
@@ -800,8 +814,8 @@ struct spx_proc_cache {
 #endif
 };
 
-static inline SpxProcs *spx_proc_cache_by_oid(SpxProcCache cache) {
-	return (SpxProcs *) cache->by_name + cache->size;
+static inline SpxProcsPtrs spx_proc_cache_by_oid(SpxProcCache cache) {
+	return (SpxProcsPtrs) cache->by_name + cache->size;
 }
 		
 SpxProcs SpxProcByOid(CALLS_ Oid oid);
@@ -1313,9 +1327,14 @@ bool RowColBool(CALLS_ int row, int col, bool *null_ret);
 StrPtr RowColStrPtr(CALLS_ int row, int col);  // fragile!!! why???
 StrPtr RowColStr(CALLS_ int row, int col, ALLOCATOR_PTR(alloc));
 SpxText RowColText(CALLS_ int row, int col, bool *is_null_ret);
+// SpxText RowColText2(CALLS_ int row, int col, bool *is_null_ret);
 size_t RowColTextLen(CALLS_ int row, int col, bool *is_null_ret);
 size_t RowColTextCopy(
 	CALLS_ int row, int col, char *buffer, size_t buffer_size, bool *is_null_ret
+);
+HeapTuple SpxCopyTuple(CALLS_ int row);
+Datum SpxTupleField(
+	CALLS_ HeapTuple tup, int col, SpxTypeOids expected_type, bool *is_null_ret
 );
 
 /* Execute a read-only query plan returning the result, if any */
@@ -1336,6 +1355,7 @@ bool SpxQueryBool(CALLS_ SpxPlans, Datum args[], bool *null_ret);
 #endif
 StrPtr SpxQueryStr(CALLS_ SpxPlans, Datum args[], ALLOCATOR_PTR(alloc));
 SpxText SpxQueryText(CALLS_ SpxPlans, Datum args[], bool *null_ret);
+// SpxText SpxQueryText2(CALLS_ SpxPlans, Datum args[], bool *null_ret);
 
 /* Unplanned Queries */
 
@@ -1441,12 +1461,27 @@ SpxArrayInfo SpxGetArray(
 
 /* ** Fancy PG Functions */
 
+#if 0
+// Copy the varlena datum into fresh storage
+struct varlena *SpxCopyDatum(CALLS_ struct varlena *datum, ALLOCATOR_PTR(alloc));
+
+// Copy the text object into fresh storage
+SpxText
+SpxCopyText(CALLS_ SpxText old_text, ALLOCATOR_PTR(alloc));
+#endif
+
+// Possibly Unsafe Cast!
+static inline Datum SpxVarlenaDatum(struct varlena *vp) { return (Datum) vp; }
+
+// Cast: dangerous, unchecked conversion!!
+static inline text *SpxDatumVarlena(Datum d) { return (text *) d; }
+
 // You MUST only pass Datums of type text!
-static inline size_t SpxTextOctetLen(Datum text_datum) {
+static inline size_t SpxTextOctetLen(struct varlena *text_datum) {
 	/* We need not detoast the input according to
 	 * backend/utils/adt/varlena.c textoctetlen()
 	 */
-	return toast_raw_datum_size(text_datum) - VARHDRSZ;
+	return toast_raw_datum_size(SpxVarlenaDatum(text_datum)) - VARHDRSZ;
 }
 
 // call it within a block, buffer goes on the stack,
@@ -1455,6 +1490,39 @@ static inline size_t SpxTextOctetLen(Datum text_datum) {
 	const size_t buffer_name ## _len = SpxTextOctetLen((text_datum));		\
 	char buffer_name [buffer_name ## _len + 1];		\
 	text_to_cstring_buffer(DatumGetTextPP((text_datum)), buffer_name, sizeof buffer_name);
+
+/* ** Let's add some type safety instead of nasty void * types! */
+
+#if 0
+ void *bsearch(const void *key, const void *base,
+                     size_t nmemb, size_t size,
+                     int (*compar)(const void *, const void *));
+#endif
+/* bsearch() searches an array of nmemb objects, the initial
+	member of which is pointed to by base, for a member that
+	matches the object pointed to by key.  The size of each
+	member of the array is speci‐ fied by size.
+ */
+// Requires GCC typeof and statement expression extensions:
+#define SPX_BSEARCH(key, base, n, size, f)	({								\
+	int (*f_)(typeof(key), typeof(base)) = (f);									\
+	typeof(base) ret_ = bsearch((key), (base), (n), (size), (int (*)(const void *, const void *))f_); \
+	ret_;																												\
+})
+
+#if 0
+void qsort(
+	void *base, size_t nmemb, size_t size,
+	int (*compar)(const void *, const void *) );
+#endif
+/*
+	The qsort() function sorts an array with nmemb elements of
+	size size.  The base argument points to the start of the array.
+*/
+#define SPX_QSORT(base, MutableFn, n, size, f)	({		\
+	int (*f_)(typeof(base), typeof(base)) = (f);				\
+	qsort(MutableFn(base), (n), (size), (int (*)(const void *, const void *))f_);	\
+})
 
 /* ** Major Functions */
 

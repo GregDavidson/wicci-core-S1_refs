@@ -42,7 +42,7 @@ CREATE DOMAIN refs_as_ints AS :WordIntsPG;
 
 CREATE OR REPLACE
 FUNCTION refs_base_init() RETURNS cstring
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 COMMENT ON FUNCTION refs_base_init() IS
 'initialize the fundamental refs package
 returning the module id string
@@ -50,76 +50,76 @@ returning the module id string
 
 CREATE OR REPLACE
 FUNCTION ref_nil_tag() RETURNS ref_tags
-AS 'spx.so' LANGUAGE c IMMUTABLE;
+AS 'spx.so' LANGUAGE C STRICT IMMUTABLE;
 
 CREATE OR REPLACE
 FUNCTION unsafe_refs_load_toms() RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 COMMENT ON FUNCTION unsafe_refs_load_toms() IS
 '(Re)Load all methods from typed_object_methods table,
 returning the count.';
 
 CREATE OR REPLACE
 FUNCTION refs_debug_toms() RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION refs_op_tag_to_method(regprocedure, ref_tags)
 RETURNS regprocedure
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 COMMENT ON
 FUNCTION refs_op_tag_to_method(regprocedure, ref_tags)
 IS '4debugging';
 
 CREATE OR REPLACE
 FUNCTION unsafe_refs_load_tocs() RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 COMMENT ON FUNCTION unsafe_refs_load_tocs() IS
 '(Re)Load all classes from typed_object_classes table,
 returning the count.';
 
 CREATE OR REPLACE
 FUNCTION refs_type_to_tag(regtype) RETURNS ref_tags
-AS 'spx.so' LANGUAGE c; COMMENT ON FUNCTION
+AS 'spx.so' LANGUAGE C STRICT; COMMENT ON FUNCTION
 refs_type_to_tag(regtype) IS 'debugging';
 
 CREATE OR REPLACE
 FUNCTION refs_table_type_to_tag(regclass, regtype) RETURNS ref_tags
-AS 'spx.so' LANGUAGE c; COMMENT ON FUNCTION
+AS 'spx.so' LANGUAGE C STRICT; COMMENT ON FUNCTION
 refs_table_type_to_tag(regclass, regtype) IS 'yields the unique tag';
 
 CREATE OR REPLACE
 FUNCTION refs_tag_to_type(ref_tags) RETURNS regtype
-AS 'spx.so' LANGUAGE c; COMMENT ON FUNCTION
+AS 'spx.so' LANGUAGE C STRICT; COMMENT ON FUNCTION
 refs_tag_to_type(ref_tags) IS 'debugging';
 
 CREATE OR REPLACE
 FUNCTION refs_debug_tocs_by_tag() RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION refs_debug_tocs_by_type() RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION refs_debug_level() RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION refs_debug_set(integer) RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION refs_debug_on() RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION refs_debug_off() RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION refs_debug() RETURNS boolean
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 -- * Types and I/O functions
 
@@ -145,7 +145,7 @@ AS 'spx.so' LANGUAGE c STRICT;
 
 CREATE OR REPLACE
 FUNCTION call_out_method(refs) RETURNS cstring
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE TYPE refs (
 	INTERNALLENGTH = :BytesPerWord,
@@ -163,48 +163,48 @@ SELECT declare_type('refs');
 
 CREATE OR REPLACE
 FUNCTION refs_tag_width() RETURNS integer
-AS 'spx.so' LANGUAGE c IMMUTABLE;
+AS 'spx.so' LANGUAGE C STRICT IMMUTABLE;
 COMMENT ON FUNCTION refs_tag_width() IS
 'Returns the width of tags in bits';
 
 -- Replace with inline???
 CREATE OR REPLACE
 FUNCTION refs_min_id() RETURNS ref_ids
-AS 'spx.so' LANGUAGE c IMMUTABLE;
+AS 'spx.so' LANGUAGE C STRICT IMMUTABLE;
 COMMENT ON FUNCTION refs_min_id() IS
 'Returns the minimum allowed id value';
 
 -- Replace with inline???
 CREATE OR REPLACE
 FUNCTION refs_max_id() RETURNS ref_ids
-AS 'spx.so' LANGUAGE c IMMUTABLE;
+AS 'spx.so' LANGUAGE C STRICT IMMUTABLE;
 COMMENT ON FUNCTION refs_max_id() IS
 'Returns the maximum allowed id value';
 
 -- Replace with inline???
 CREATE OR REPLACE
 FUNCTION refs_min_tag() RETURNS ref_tags
-AS 'spx.so' LANGUAGE c IMMUTABLE;
+AS 'spx.so' LANGUAGE C STRICT IMMUTABLE;
 COMMENT ON FUNCTION refs_min_tag() IS
 'Returns the minimum allowed tag value';
 
 -- Replace with inline???
 CREATE OR REPLACE
 FUNCTION refs_max_tag() RETURNS ref_tags
-AS 'spx.so' LANGUAGE c IMMUTABLE;
+AS 'spx.so' LANGUAGE C STRICT IMMUTABLE;
 COMMENT ON FUNCTION refs_max_tag() IS
 'Returns the maximum allowed tag value';
 
 CREATE OR REPLACE
 FUNCTION ref_tag(refs) RETURNS ref_tags
-AS 'spx.so' LANGUAGE c IMMUTABLE;
+AS 'spx.so' LANGUAGE C STRICT IMMUTABLE;
 COMMENT ON FUNCTION ref_tag(refs) IS
 'Extracts tag from a ref- written in C, could be in SQL';
 
 -- ** ref_id(refs) -> ref_ids
 CREATE OR REPLACE
 FUNCTION ref_id(refs) RETURNS ref_ids
-AS 'spx.so', 'ref_id' LANGUAGE c IMMUTABLE;
+AS 'spx.so', 'ref_id' LANGUAGE C STRICT IMMUTABLE;
 COMMENT ON FUNCTION ref_id(refs) IS
 'Extracts id from a ref - written in C, could be in SQL';
 
@@ -213,7 +213,7 @@ COMMENT ON FUNCTION ref_id(refs) IS
 -- see Refs/refs-op-class.sql create_ref_op_class(regtype)
 
 CREATE FUNCTION ref_cmp(refs, refs) RETURNS int4
-	 AS 'spx.so' LANGUAGE C IMMUTABLE;
+	 AS 'spx.so' LANGUAGE C STRICT IMMUTABLE;
 
 CREATE FUNCTION ref_lt(refs, refs) RETURNS bool
 AS $$ SELECT ref_cmp($1, $2) < 0 $$
@@ -299,7 +299,7 @@ AS 'spx.so', 'call_in_method' LANGUAGE c STRICT;
 
 CREATE OR REPLACE
 FUNCTION unchecked_call_out_method(unchecked_refs) RETURNS cstring
-AS 'spx.so', 'call_out_method' LANGUAGE c IMMUTABLE;
+AS 'spx.so', 'call_out_method' LANGUAGE C STRICT IMMUTABLE;
 
 CREATE TYPE unchecked_refs (
 	input = unchecked_call_in_method,
@@ -324,7 +324,7 @@ CREATE CAST (refs AS unchecked_refs) WITHOUT FUNCTION;
 CREATE OR REPLACE
 FUNCTION unchecked_ref_from_tag_id(ref_tags, ref_ids)
 RETURNS unchecked_refs
-AS 'spx.so' LANGUAGE c IMMUTABLE;
+AS 'spx.so' LANGUAGE C STRICT IMMUTABLE;
 COMMENT ON
 FUNCTION unchecked_ref_from_tag_id(ref_tags, ref_ids) IS
 'Constructs an unchecked_refs from a tag and an id - written in C';
@@ -371,7 +371,7 @@ CREATE TYPE crefs;
 -- ** crefs_nil() -> crefs
 CREATE OR REPLACE
 FUNCTION crefs_nil() RETURNS crefs
-AS 'spx.so' LANGUAGE c IMMUTABLE;
+AS 'spx.so' LANGUAGE C STRICT IMMUTABLE;
 
 -- ** crefs_in(cstring) -> crefs
 CREATE OR REPLACE
@@ -381,7 +381,7 @@ AS 'spx.so' LANGUAGE c STRICT;
 -- ** crefs_out(crefs) -> cstring
 CREATE OR REPLACE
 FUNCTION crefs_out(crefs) RETURNS cstring
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 -- ** TYPE crefs
 CREATE TYPE crefs (
@@ -399,7 +399,7 @@ SELECT declare_type('crefs');
 -- ** crefs_calls(crefs) -> text
 CREATE OR REPLACE
 FUNCTION crefs_calls(crefs) RETURNS text
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 COMMENT ON FUNCTION crefs_calls(crefs) IS
 'returns the call chain leading up to the caller';
 
@@ -407,21 +407,21 @@ COMMENT ON FUNCTION crefs_calls(crefs) IS
 -- ** crefs_env(crefs) -> env_refs
 CREATE OR REPLACE
 FUNCTION crefs_env(crefs) RETURNS env_refs
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 COMMENT ON FUNCTION crefs_env(crefs) IS
 'returns the env_ref in the given crefs';
 
 -- ** crefs_node(crefs) -> refs (doc_node)
 CREATE OR REPLACE
 FUNCTION crefs_node(crefs) RETURNS refs
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 COMMENT ON FUNCTION crefs_node(crefs) IS
 'returns the current tree node being rendered';
 
 -- ** crefs_parent(crefs) -> refs (doc_node)
 CREATE OR REPLACE
 FUNCTION crefs_parent(crefs) RETURNS refs
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 COMMENT ON FUNCTION crefs_parent(crefs) IS
 'returns the parent of the tree node being rendered';
 */
@@ -429,7 +429,7 @@ COMMENT ON FUNCTION crefs_parent(crefs) IS
 -- ** crefs_indent(crefs) -> integer
 CREATE OR REPLACE
 FUNCTION crefs_indent(crefs) RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 COMMENT ON FUNCTION crefs_indent(crefs) IS
 'returns the call chain leading up to the caller';
 
@@ -438,7 +438,7 @@ COMMENT ON FUNCTION crefs_indent(crefs) IS
 /*
 CREATE OR REPLACE
 FUNCTION ref_show_op(refs) RETURNS text
-AS 'spx.so','call_text_method' LANGUAGE c;
+AS 'spx.so','call_text_method' LANGUAGE C STRICT;
 COMMENT ON FUNCTION ref_show_op(refs) IS
 'Show the value of the referenced object in a
 manner nice for interactive debugging - generally
@@ -448,19 +448,19 @@ sub-objects';
 
 CREATE OR REPLACE
 FUNCTION ref_text_op(refs) RETURNS text
-AS 'spx.so','call_text_method' LANGUAGE c;
+AS 'spx.so','call_text_method' LANGUAGE C STRICT;
 COMMENT ON FUNCTION ref_text_op(refs) IS
 'Return the value of the referenced object as
 complete text, including all sub-objects';
 
 CREATE OR REPLACE
 FUNCTION ref_scalar_op(refs) RETURNS refs
-AS 'spx.so','call_scalar_method' LANGUAGE c;
+AS 'spx.so','call_scalar_method' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION ref_length_op(refs) RETURNS :WordIntsPG
-AS 'spx.so', 'call_scalar_method'  LANGUAGE c;
+AS 'spx.so', 'call_scalar_method'  LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION ref_exists_op(refs) RETURNS boolean
-AS 'spx.so', 'call_scalar_method' LANGUAGE c;
+AS 'spx.so', 'call_scalar_method' LANGUAGE C STRICT;

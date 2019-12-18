@@ -141,11 +141,11 @@ SELECT oid_::oid, (
 
 CREATE OR REPLACE
 FUNCTION spx_init() RETURNS cstring
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_initialized() RETURNS bool
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 /* NOT SAFE!  Only call if we've already called
  spx_collate_locale()
@@ -157,29 +157,29 @@ AS 'spx.so' LANGUAGE c;
 DROP FUNCTION IF EXISTS spx_initialize();
 CREATE OR REPLACE
 FUNCTION unsafe_spx_initialize() RETURNS cstring
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 -- needed for jgd debug!!  Remove DROP when remove that!!
 DROP FUNCTION IF EXISTS spx_collate_locale();
 CREATE OR REPLACE
 FUNCTION spx_collate_locale() RETURNS cstring
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION unsafe_spx_load_schemas() RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION unsafe_spx_load_schema_path() RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION unsafe_spx_load_types() RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION unsafe_spx_load_procs() RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 */
 CREATE OR REPLACE
 FUNCTION spx_test_select(text, integer) RETURNS int8
@@ -189,76 +189,76 @@ AS 'spx.so' LANGUAGE c STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_schema_by_id(integer) RETURNS cstring
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_schema_by_oid(oid) RETURNS cstring
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_schema_path_by_oid(oid) RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_type_by_oid(regtype) RETURNS cstring
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_proc_by_oid(regprocedure) RETURNS cstring
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_proc_call_proc_str(regprocedure, regprocedure)
 RETURNS cstring
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 -- ** array functions
 
 CREATE OR REPLACE
 FUNCTION spx_describe_array(ANYARRAY) RETURNS integer
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_item_to_singleton(anyelement) RETURNS anyarray
-AS 'spx.so' LANGUAGE c;
+AS 'spx.so' LANGUAGE C STRICT;
 
 -- ** debugging functions
 
 CREATE OR REPLACE
 FUNCTION spx_debug_schemas() RETURNS integer
-AS 'spx.so' LANGUAGE c ;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_debug_types() RETURNS integer
-AS 'spx.so' LANGUAGE c ;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_debug_procs() RETURNS integer
-AS 'spx.so' LANGUAGE c ;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_debug_level() RETURNS integer
-AS 'spx.so' LANGUAGE c ;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_debug() RETURNS boolean
-AS 'spx.so' LANGUAGE c ;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_debug() RETURNS boolean
-AS 'spx.so' LANGUAGE c ;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_debug_set(integer) RETURNS integer
-AS 'spx.so' LANGUAGE c ;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_debug_on() RETURNS integer
-AS 'spx.so' LANGUAGE c ;
+AS 'spx.so' LANGUAGE C STRICT;
 
 CREATE OR REPLACE
 FUNCTION spx_debug_off() RETURNS integer
-AS 'spx.so' LANGUAGE c ;
+AS 'spx.so' LANGUAGE C STRICT;
 
 -- * sql functions
 

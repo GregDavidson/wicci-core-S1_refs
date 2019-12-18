@@ -55,10 +55,12 @@ cmp_toms(const Toms a, const Toms b) {
 	return cmp_ops ? cmp_ops : a->tag - b->tag;
 }
 
+#if 0
 static int
-unsafe_cmp_toms(const void *const p1, const void *const p2) {
-	return cmp_toms(p1, p2);
+cmp_toms_ptrs(const TomsPtrs a, const TomsPtrs b) {
+	return cmp_toms(*a, *b);
 }
+#endif
 
 /* WHAT WE WANT AND DO NOT HAVE!!!!
 	When there is no method available for a given operation
@@ -71,22 +73,23 @@ unsafe_cmp_toms(const void *const p1, const void *const p2) {
 // Warning: within this module, result may be cast to TomPtr
 static Toms GetTom(CALLS_ SpxProcs op, ref_tags tag) {
 	CALL_LINK();
-	struct typed_object_method target, fallback;
-	target.tag = tag;
-	fallback.tag = -1; fallback.method = op;
+	struct typed_object_method target = {.tag = tag};
+	struct typed_object_method fallback = {.tag = -1, .method = op};
 	Toms tom, fallback_tom = &fallback;
 	for (;;) {
 		target.operation = fallback_tom->method;
 		fallback_tom = 0;
-		tom = /* unsafe cast */ bsearch(
-	&target, Tom_Cache->tom, Tom_Cache->size,
-	sizeof target, unsafe_cmp_toms
+		const Toms target_ptr = &target, tom_cache = Tom_Cache->tom;
+		tom = SPX_BSEARCH(
+			target_ptr, tom_cache, Tom_Cache->size,
+			sizeof target, cmp_toms
 		);
 		if ( tom ) break;
 		fallback.operation = target.operation;
-		fallback_tom = /* unsafe cast */ bsearch(
-	&fallback, Tom_Cache->tom, Tom_Cache->size,
-	sizeof fallback, unsafe_cmp_toms
+		const Toms fallback_ptr = &fallback;
+		fallback_tom = SPX_BSEARCH(
+			fallback_ptr, tom_cache, Tom_Cache->size,
+			sizeof fallback, cmp_toms
 		);
 		if ( !fallback_tom ) break;
 		CALL_DEBUG_OUT(
@@ -245,11 +248,11 @@ static inline SpxPlans RefMakeQueryPlan(
 		args[i] = arg_types[i]; // compatible other types
 	ProcInitResult status;
 	const SpxPlans plan = SpxProcTypesQueryPlan(
-	CALL_ proc2call, ret_type, args, num_args, &status
+		CALL_ proc2call, ret_type, args, num_args, &status
 	);
 	CallAssertMsg(
-	status == proc_init_ok, "status: %s", SpxQueryDecode(status)
-	 );
+		status == proc_init_ok, "status: %s", SpxQueryDecode(status)
+	);
 	return plan;
 }
 
@@ -260,14 +263,13 @@ static inline void RefRequireQueryPlan(
 ) {
 	CALLS_LINK();
 	if ( SpxPlanNull(*plan_ptr) )
-		*(SpxPlans *)plan_ptr =	// const to mutable cast!!
-			RefMakeQueryPlan(
-	CALL_ proc2call, ret_type, arg_types, num_arg_types
-			);
+		*SpxMutablePlan(plan_ptr) =
+			RefMakeQueryPlan( CALL_ proc2call, ret_type, arg_types, num_arg_types );
 	else
-		CallAssertMsg( num_arg_types >=  proc2call->min_args,
-	"plan->num_args: %d, num_arg_types: %d",
-	plan_ptr->num_args, num_arg_types );
+		CallAssertMsg( num_arg_types >= proc2call->min_args,
+			"plan->num_args: %d, num_arg_types: %d",
+			plan_ptr->num_args, num_arg_types
+		);
 }
 
 
@@ -338,7 +340,7 @@ static void TomToValue(
 	CALLS_ Toms tom, Datum *const args, int num_args, // we dispatch this
 	SpxText *text_ret,		// to either return text_ret and is_null_ret
 	bool *is_null_ret,		// required!
- Datum *datum_ret				// or datum_ret and is_null_ret
+	Datum *datum_ret				// or datum_ret and is_null_ret
 ) {
 	CALL_LINK();
 	AssertSPX( _CALL_ );
@@ -347,8 +349,17 @@ static void TomToValue(
 	if (!tom) {
 		NoValue( text_ret, is_null_ret );
 		CALL_WARN_OUT("No TOM");
-	}	else if ( text_ret )
-		*text_ret = SpxQueryText(CALL_ tom->plan, args, is_null_ret);
+	}	else if ( text_ret ) {
+		SpxText text = SpxQueryText(CALL_ tom->plan, args, is_null_ret);
+		if (*is_null_ret)
+			NoValue( text_ret, is_null_ret );
+		else
+#if 0
+		*text_ret = SpxCopyText( CALL_ text, call_SPI_palloc );
+#else
+		*text_ret = text;
+#endif
+	}
 	else
 		*datum_ret = CallMethod(CALL_ tom, args, is_null_ret);
 }
@@ -391,23 +402,13 @@ static void RefEtcToValue(
 	);
 	// Paranoid debugging!!!
   if ( DebugLevel() && text_ret ) {
-		if ( text_ret->varchar) {
-				char *const s = text_to_cstring(text_ret->varchar);
-				CALL_WARN_OUT("s: pre value %s", s ?: "NULL");
-				pfree(s);
-		} else {
-				CALL_WARN_OUT("s: pre value %s", "NULL");
-		}
+		TEXT_BUFFER_TMP_STR(text_ret->varchar, str);
+		CALL_DEBUG_OUT("pre-text: %s", *str ? str : "NULL");
 	}
 	FinishSPX(CALL_ level);
   if ( DebugLevel() && text_ret ) {
-		if ( text_ret->varchar) {
-				char *const s = text_to_cstring(text_ret->varchar);
-				CALL_WARN_OUT("s: value %s", s ?: "NULL");
-				pfree(s);
-		} else {
-				CALL_WARN_OUT("s: value %s", "NULL");
-		}
+		TEXT_BUFFER_TMP_STR(text_ret->varchar, str);
+		CALL_DEBUG_OUT("post-text: %s", *str ? str : "NULL");
 	}
 }
 
@@ -487,35 +488,44 @@ static inline Tocs GetToc(CALLS_ ref_tags tag) {
 	return &Toc_Cache->toc[tag];
 }
 
-static int cmp_tocs_by_class_type(const void *const p1, const void *const p2) {
-	const Tocs a = *(Tocs *) p1, b = *(Tocs *) p2;
+static inline int cmp_tocs_by_class_type(const Tocs a, const Tocs b) {
 	const int diff = a->table - b->table;
 	return diff ? diff : a->type->oid - b->type->oid;
 }
 
-static int cmp_tocs_by_type_tag(const void *const p1, const void *const p2) {
-	const Tocs a = *(Tocs *) p1, b = *(Tocs *) p2;
+static int cmp_tocs_ptrs_by_class_type(const TocsPtrs a, const TocsPtrs b) {
+	return cmp_tocs_by_class_type(*a, *b);
+}
+
+static inline int cmp_tocs_by_type_tag(const Tocs a, const Tocs b) {
 	const int diff = a->type->oid - b->type->oid;
 	return diff ? diff : a->tag - b->tag;
 }
 
-static int cmp_tocs_by_type(const void *const p1, const void *const p2) {
-	const Tocs a = *(Tocs *) p1, b = *(Tocs *) p2;
+static int cmp_tocs_ptrs_by_type_tag(const TocsPtrs a, const TocsPtrs b) {
+	return cmp_tocs_by_type_tag(*a, *b);
+}
+
+static int cmp_tocs_by_type(const Tocs a, const Tocs b) {
 	return a->type->oid - b->type->oid;
+}
+
+static int cmp_tocs_ptrs_by_type(const TocsPtrs a, const TocsPtrs b) {
+	return cmp_tocs_by_type(*a, *b);
 }
 
 /* returns first toc (lowest tag value) of given type */
 static Tocs FirstTocByType(CALLS_ SpxTypes type) {
-	struct typed_object_class target, *const target_ptr = &target;
-	target.type = type;
-	TocsPtrs start = toc_cache_by_type_tag_start(Toc_Cache);
-	Tocs *p = /* unsafe cast */ bsearch(
-	&target_ptr, start, Toc_Cache->size, sizeof *start,
-	cmp_tocs_by_type
+	struct typed_object_class target = {.type = type};
+	const struct typed_object_class *const target_ptr = &target;
+	const TocsPtrs start = toc_cache_by_type_tag_start(Toc_Cache), target_pp = &target_ptr;
+	const Tocs *p = SPX_BSEARCH(
+		target_pp, start, Toc_Cache->size, sizeof *start,
+		cmp_tocs_ptrs_by_type
 	);
 	if (!p) return 0;
-	Tocs *pp;
-	for (pp=p; p>start && (*--p)->type ==  (*pp)->type; pp=p)
+	const Tocs *pp;
+	for ( pp=p ; p>start && (*--p)->type == (*pp)->type ; pp=p )
 		;
 	return *pp;
 }
@@ -562,15 +572,14 @@ FUNCTION_DEFINE(refs_type_to_tag) {
 }
 
 static Tocs TocByTableType(CALLS_ Oid table, SpxTypes type) {
-	struct typed_object_class target, *const target_ptr = &target;
-	target.table = table;
-	target.type = type;
-	TocsPtrs start = toc_cache_by_class_type_start(Toc_Cache);
-	Tocs *p = /* unsafe cast */ bsearch(
-		&target_ptr, start,
+	const struct typed_object_class
+		target = {.table = table, .type = type}, *const target_ptr = &target;
+	const TocsPtrs start = toc_cache_by_class_type_start(Toc_Cache), target_pp = &target_ptr;
+	const Tocs *const p = SPX_BSEARCH(
+		target_pp, start,
 		Toc_Cache->size,
 		sizeof *start,
-		cmp_tocs_by_class_type
+		cmp_tocs_ptrs_by_class_type
 	);
 	return p ? *p : 0;
 }
@@ -641,10 +650,10 @@ static TocCaches LoadTocs(_CALLS_) {
 	// make the query plan
 	static SpxPlans plan;
 	SpxPlan0( CALL_ &plan, select );
-	struct toc_cache toc;
-	toc.size = SpxQueryDB(plan, NULL, REF_MAX_TAG);
-	// I BET Ref_Tags_Type IS 0!!!
-	toc.max_tag = RowColTypedInt32(CALL_ 0, maxtag_, Ref_Tags_Type, 0);
+	const struct toc_cache toc = {
+		.size = SpxQueryDB(plan, NULL, REF_MAX_TAG),
+		.max_tag = RowColTypedInt32(CALL_ 0, maxtag_, Ref_Tags_Type, 0)
+	};
 	if (toc.size != toc.max_tag + 1) {
 		CALL_WARN_OUT(
 									"toc.size: %d max_tag+1:  %d",
@@ -695,13 +704,13 @@ static TocCaches LoadTocs(_CALLS_) {
 		toc->num_ops = RowColTypedInt32(CALL_ row, numops_, Int32_Type, 0);
 	}
 	Assert_SpxObjPtr_AtEnd( CALL_ cache, by_class );
-	qsort(
-		(void *) toc_cache_by_type_tag_start(cache),			cache->size,
-		sizeof *toc_cache_by_type_tag_start(cache),	cmp_tocs_by_type_tag
+	SPX_QSORT(
+		toc_cache_by_type_tag_start(cache), TocsMutablePtr, cache->size,
+		sizeof *toc_cache_by_type_tag_start(cache), cmp_tocs_ptrs_by_type_tag
 	);
-	qsort(
-		(void *) toc_cache_by_class_type_start(cache),		cache->size,
-		sizeof *toc_cache_by_class_type_start(cache),	cmp_tocs_by_class_type
+	SPX_QSORT(
+		toc_cache_by_class_type_start(cache), TocsMutablePtr, cache->size,
+		sizeof *toc_cache_by_class_type_start(cache), cmp_tocs_ptrs_by_class_type
 	);
 	CALL_DEBUG_OUT("<== LoadTocs");
 	return cache;
@@ -813,7 +822,7 @@ FUNCTION_DEFINE(crefs_calls) {		// crefs -> text
 	StrPtr s = CRefsOut( GetArgCrefs(0), PG_ARGISNULL(0) );
 	if (s)
 		PG_RETURN_CSTRING(s);
-	PG_RETURN_NULL();
+	PG_RETURN_NULL(); // Currently can't happen!!
 }
 
 #if 0
@@ -909,7 +918,6 @@ FUNCTION_DEFINE(refs_base_init) {
 	RefLoadTocs(_CALL_);
 	FinishSPX(CALL_ level);
 	Initialize();
-	// CallAssert(refs_module_id); // always true
 	PG_RETURN_CSTRING( NewStr(CALL_ refs_module_id, call_palloc) );
 }
 

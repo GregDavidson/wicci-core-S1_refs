@@ -514,23 +514,19 @@ SpxSchemaCaches Spx_Schema_Cache;
 SpxSchemaPaths Spx_Schema_Path;
 
 static int cmp_name_with_schema(
-	const void *key_ptr, const void *elem_ptr
+	const StrPtr key, const SpxSchemasPtrs spp
 ) {
-	const StrPtr key = (StrPtr) key_ptr;
-	const SpxSchemas elem = *(SpxSchemas *) elem_ptr;
-	return strcoll(key, elem->name);
+	return strcoll(key, (*spp)->name);
 }
 
 #if 0
-static int cmp_schemas_by_name(const void *const p1, const void *const p2) {
-	const SpxSchemas a = *(SpxSchemas *) p1, b = *(SpxSchemas *) p2;
-	return strcoll(a->name, b->name);
+static int cmp_schemas_by_name(const SpxSchemasPtrs a, const SpxSchemasPtrs b) {
+	return strcoll((*a)->name, (*b)->name);
 }
 #endif
 
-static int cmp_schemas_by_oid(const void *const p1, const void *const p2) {
-	const SpxSchemas a = *(SpxSchemas *) p1, b = *(SpxSchemas *) p2;
-	return a->oid - b->oid;
+static int cmp_schemas_by_oid(const SpxSchemasPtrs a, const SpxSchemasPtrs b) {
+	return (*a)->oid - (*b)->oid;
 }
 
 extern void SpxSchemaCacheCheck(CALLS_ SpxSchemaCaches cache) {
@@ -648,8 +644,8 @@ static SpxSchemaCaches LoadSchemas(_CALLS_) {
 	if ( room_left != 0 )
 		CALL_WARN_OUT("room_left: %zu", room_left);
 	CALL_DEBUG_OUT("About to qsort the Schema Cache by_oid");
-	qsort( (void *)	spx_schema_cache_by_oid(cache),		cache->size,
-					sizeof (SpxSchemas),	cmp_schemas_by_oid	 );
+	SPX_QSORT( spx_schema_cache_by_oid(cache), SpxSchemasMutablePtr, cache->size,
+						 sizeof (SpxSchemas),	cmp_schemas_by_oid );
 	CALL_DEBUG_OUT("<== LoadSchemas");
 	return cache;
 }
@@ -666,9 +662,8 @@ extern int SpxLoadSchemas(_CALLS_) {
 
 #if 0
 SpxSchemas SchemaById(int id) {
-	struct spx_schema target, *target_ptr = &target;
-	target.id = id;
-	SpxSchemas *p = /* unsafe cast */ bsearch(
+	const struct spx_schema target = {.id = id}, *target_ptr = &target;
+	SpxSchemas *p = SPX_BSEARCH(
 	&target_ptr,
 	Spx_Schemas_By_Id,
 	Schema_Array_Len,
@@ -682,10 +677,9 @@ SpxSchemas SchemaById(int id) {
 static SpxSchemas SchemaByOid(
 	CALLS_ Oid oid, SpxSchemaCaches cache
 ) {
-	struct spx_schema target, *const target_ptr = &target;
-	target.oid = oid;
-	SpxSchemas *const p = /* unsafe cast */ bsearch(
-	&target_ptr,
+	const struct spx_schema target = {.oid = oid}, *const target_ptr = &target;
+	const SpxSchemasPtrs target_pp = &target_ptr, p = SPX_BSEARCH(
+	target_pp,
 	spx_schema_cache_by_oid(cache),
 	cache->size,
 	sizeof (SpxSchemas),
@@ -702,7 +696,7 @@ extern SpxSchemas SpxSchemaByOid(CALLS_ Oid oid) {
 static SpxSchemas SchemaByName(
 	CALLS_ StrPtr name, SpxSchemaCaches cache
 ) {
-	SpxSchemas *const p = /* unsafe cast */ bsearch(
+	const SpxSchemasPtrs p = SPX_BSEARCH(
 	name,
 	spx_schema_cache_by_name(cache),
 	cache->size,
@@ -767,22 +761,18 @@ FUNCTION_DEFINE(unsafe_spx_load_schema_path) {
 SpxTypeCache Spx_Type_Cache;
 typedef struct spx_type_cache *TypeCachePtr;
 
-static int cmp_name_with_type(const void *const p1, const void *const p2) {
-	const StrPtr a = (StrPtr) p1;
-	const SpxTypes b = *(SpxTypes *) p2;
-	return strcoll(a, b->name);
+static int cmp_name_with_type(const StrPtr a, const SpxTypesPtrs b) {
+	return strcoll(a, (*b)->name);
 }
 
 #if 0
-static int cmp_types_by_name(const void * p1, const void * p2) {
-	SpxTypes a = *(SpxTypes *) p1, b = *(SpxTypes *) p2;
-	return strcoll(a->name, b->name);
+static int cmp_types_by_name(const StrPtr a, const SpxTypesPtrs b) {
+	return strcoll((*a)->name, (*b)->name);
 }
 #endif
 
-static int cmp_types_by_oid(const void *const p1, const void *const p2) {
-	const SpxTypes a = *(SpxTypes *) p1, b = *(SpxTypes *) p2;
-	return a->oid - b->oid;
+static int cmp_types_by_oid(const SpxTypesPtrs a, const SpxTypesPtrs b) {
+	return (*a)->oid - (*b)->oid;
 }
 
 extern void SpxTypeCacheCheck(CALLS_ SpxTypeCache cache) {
@@ -856,8 +846,8 @@ static SpxTypeCache LoadTypes(_CALLS_) {
 	if ( room_left != 0 )
 		CALL_WARN_OUT("room_left: %zu", room_left);
 	CALL_DEBUG_OUT("about to qsort %d rows by oid", num_rows);
-	qsort(	(void *) spx_type_cache_by_oid(cache),		cache->size,
-		sizeof *spx_type_cache_by_oid(cache),	cmp_types_by_oid);
+	SPX_QSORT( spx_type_cache_by_oid(cache), SpxTypesMutablePtr, cache->size,
+						 sizeof *spx_type_cache_by_oid(cache), cmp_types_by_oid );
 	CALL_DEBUG_OUT("<== LoadTypes");
 	return cache;
 }
@@ -872,10 +862,9 @@ extern int SpxLoadTypes(_CALLS_) {
 }
 
 extern SpxTypes TypeByOid(CALLS_ Oid oid, SpxTypeCache cache) {
-	struct spx_type target, *const target_ptr = &target;
-	target.oid = oid;
-	SpxTypes *const p = /* unsafe cast */ bsearch(
-		&target_ptr, spx_type_cache_by_oid(cache), cache->size,
+	const struct spx_type target = {.oid = oid}, *const target_ptr = &target;
+	const SpxTypesPtrs target_pp = &target_ptr, p = SPX_BSEARCH(
+		target_pp, spx_type_cache_by_oid(cache), cache->size,
 		sizeof *spx_type_cache_by_oid(cache), cmp_types_by_oid
 	);
 	return p ? *p : 0;
@@ -888,8 +877,8 @@ extern SpxTypes SpxTypeByOid(CALLS_ Oid oid) {
 }
 
 static SpxTypes TypeByName(CALLS_ StrPtr name, SpxTypeCache cache) {
-	SpxTypes *const p = /* unsafe cast */ bsearch(
-	name, cache->by_name, cache->size,
+	SpxTypesPtrs p = SPX_BSEARCH(
+	name, cache->by_name+0, cache->size,
 	sizeof *cache->by_name, cmp_name_with_type
 	);
 	return p ? *p : 0;
@@ -941,22 +930,18 @@ FUNCTION_DEFINE(unsafe_spx_load_types) {
 SpxProcCache Spx_Proc_Cache;
 typedef struct spx_proc_cache *ProcCachePtr;
 
-static int cmp_name_with_proc(const void * p1, const void * p2) {
-	const StrPtr a = (StrPtr) p1;
-	const SpxProcs b = *(SpxProcs *) p2;
-	return strcoll(a, spx_proc_name(b));
+static int cmp_name_with_proc(const StrPtr a, const SpxProcsPtrs b) {
+	return strcoll(a, spx_proc_name(*b));
 }
 
 #if 0
-static int cmp_procs_by_name(const void * p1, const void * p2) {
-	SpxProcs a = *(SpxProcs *) p1, b = *(SpxProcs *) p2;
-	return strcoll(spx_proc_name(a), spx_proc_name(b));
+static int cmp_procs_by_name(const SpxProcsPtrs a, const SpxProcsPtrs b) {
+	return strcoll(spx_proc_name(*a), spx_proc_name(*b));
 }
 #endif
 
-static int cmp_procs_by_oid(const void *const p1, const void *const p2) {
-	const SpxProcs a = *(SpxProcs *) p1, b = *(SpxProcs *) p2;
-	return a->oid - b->oid;
+static int cmp_procs_by_oid(const SpxProcsPtrs a, const SpxProcsPtrs b) {
+	return (*a)->oid - (*b)->oid;
 }
 
 static inline void dst_size_accum_len(
@@ -1066,17 +1051,12 @@ FUNCTION_DEFINE(spx_proc_call_proc_str) {
 												CALL_ 0, 0, callee, SpxTypeOid(caller->return_type),
 												caller->arg_type_oids, num_call_args
 	)];
-	// Why adding 1 twice??
 	SpxCallStr(
-						 CALL_ buf, 1+sizeof buf, callee,
+						 CALL_ buf, sizeof buf, callee,
 						 SpxTypeOid(caller->return_type),
 						 caller->arg_type_oids, num_call_args
 	);
-	//	PG_RETURN_CSTRING( NewStr(CALL_ buf, CallAlloc) );
-	UtilStr s = NewStr(CALL_ buf, call_palloc);
-	if (s)
-		PG_RETURN_CSTRING( NewStr(CALL_ buf, call_palloc) );
-	PG_RETURN_NULL();
+	PG_RETURN_CSTRING( NewStr(CALL_ buf, call_palloc) );
 }
 
 extern SpxPlans SpxProcTypesQueryPlan(
@@ -1090,14 +1070,14 @@ extern SpxPlans SpxProcTypesQueryPlan(
 	CallAssert(p->schema->name);
 	// CallAssert(p->return_type); // what about void??
 	const size_t buf_len = 1+SpxCallStr(
-	CALL_ 0, 0, p, ret_type, arg_types, num_args
+		CALL_ 0, 0, p, ret_type, arg_types, num_args
 	);
 	char buf[buf_len];
 	CallAssert(buf_len == 1+SpxCallStr(
-	CALL_ buf, buf_len, p, ret_type, arg_types, num_args
+		CALL_ buf, buf_len, p, ret_type, arg_types, num_args
 	) );
 	const SpxPlans plan =  SpxPlanQuery( CALL_ buf, arg_types, num_args );
-	CallAssert(!SpxPlanNull(plan) ||  status);
+	CallAssert(!SpxPlanNull(plan) || status);
 	if (status) *status = !SpxPlanNull(plan) ? proc_init_ok : proc_init_ptr_null;
 	return plan;
 }
@@ -1192,8 +1172,8 @@ static SpxProcCache LoadProcs(_CALLS_) {
 	cache->type_cache = Spx_Type_Cache;
 	cache->size = num_rows;
 	SpxProcs
-		*by_name = cache->by_name,
-		*by_oid = spx_proc_cache_by_oid(cache);
+		*by_name = SpxMutableProcsPtr(cache->by_name),
+		*by_oid = SpxMutableProcsPtr(spx_proc_cache_by_oid(cache));
 	p = SpxMutableProc(procs_cache_procs(cache));
 	for (int row = 0; row < num_rows; row++) {
 		p->oid = RowColTypedOid(CALL_ row, oid_, Procedure_Type, 0);
@@ -1233,10 +1213,8 @@ static SpxProcCache LoadProcs(_CALLS_) {
 	CallAssertMsg(name_size_accum == sum_text,
 	FMT_lf(name_size_accum,"%d") FMT_lf(sum_text,"%d"),
 	name_size_accum, sum_text );
-	// qsort(	cache->by_name,		cache->size,
-	//		sizeof *cache->by_name,	cmp_procs_by_name );
-	qsort(	(void *) spx_proc_cache_by_oid(cache),	cache->size,
-		sizeof (SpxProcs),		cmp_procs_by_oid );
+	SPX_QSORT( spx_proc_cache_by_oid(cache), SpxMutableProcsPtr, cache->size,
+						 sizeof (SpxProcs), cmp_procs_by_oid );
 	//  DebugSetLevel(prior_debug_level);
 	CALL_DEBUG_OUT("<== LoadProcs");
 	return cache;
@@ -1252,10 +1230,9 @@ extern int SpxLoadProcs(_CALLS_) {
 }
 
 static SpxProcs ProcByOid(CALLS_ Oid oid, SpxProcCache cache) {
-	struct spx_proc target, *const target_ptr = &target;
-	target.oid = oid;
-	SpxProcs *const p = /* unsafe cast */ bsearch(
-	&target_ptr, spx_proc_cache_by_oid(cache), cache->size,
+	const struct spx_proc target = {.oid = oid}, *const target_ptr = &target;
+	const SpxProcsPtrs target_pp = &target_ptr, p = SPX_BSEARCH(
+	target_pp, spx_proc_cache_by_oid(cache), cache->size,
 	sizeof (SpxProcs), cmp_procs_by_oid
 	);
 	return p ? *p : 0;
@@ -1268,8 +1245,8 @@ extern SpxProcs SpxProcByOid(CALLS_ Oid oid) {
 }
 
 static SpxProcs ProcByName(CALLS_ StrPtr name, SpxProcCache cache) {
-	SpxProcs *const p = /* unsafe cast */ bsearch(
-		name, cache->by_name, cache->size,
+	SpxProcsPtrs p = SPX_BSEARCH(
+		name, cache->by_name + 0, cache->size,
 		sizeof *cache->by_name, cmp_name_with_proc
 	);
 	return p ? *p : 0;
@@ -1407,11 +1384,7 @@ FUNCTION_DEFINE(spx_collate_locale) {
 	CALL_BASE();
 	CALL_DEBUG_OUT("+spx_collate_locale();");
 	SPX_FUNC_NUM_ARGS_IS(0);
-	//	SpxInit(_CALL_);	// WTF???
-	//	RequireSpx(_CALL_);	// better, but is it needed at all??
-	UtilStr s = NewStr(CALL_ setlocale(LC_COLLATE, 0), call_palloc);
-	CallAssert(s);
-	PG_RETURN_CSTRING(s);
+	PG_RETURN_CSTRING(NewStr(CALL_ setlocale(LC_COLLATE, 0), call_palloc));
 }
 
 /* Utility Function Definitions */
@@ -1561,7 +1534,6 @@ FUNCTION_DEFINE(spx_schema_by_oid) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(1);
 	const SpxSchemas s = SpxSchemaByOid(CALL_ PG_GETARG_OID(0) );
-	//	if (s) PG_RETURN_CSTRING( NewStr(CALL_ s->name, CallAlloc) );
 	if (s) PG_RETURN_CSTRING( NewStr(CALL_ s->name, call_palloc) );
 	PG_RETURN_NULL();
 }
@@ -1611,7 +1583,6 @@ FUNCTION_DEFINE(spx_type_by_oid) {
 	CALL_BASE();
 	SPX_FUNC_NUM_ARGS_IS(1);
 	const SpxTypes t = SpxTypeByOid(CALL_  PG_GETARG_OID(0) );
-	//	if (t) PG_RETURN_CSTRING( NewStr(CALL_ t->name, CallAlloc) );
 	if (t) PG_RETURN_CSTRING( NewStr(CALL_ t->name, call_palloc) );
 	PG_RETURN_NULL();
 }
@@ -1657,7 +1628,6 @@ FUNCTION_DEFINE(spx_proc_by_oid) {
 	char buf[ 1 + SpxProcSig(CALL_ 0, 0, p) ];
 	CALL_DEBUG_OUT(C_SIZE_FMT(sizeof buf), C_SIZE_VAL(sizeof buf));
 	CallAssert( sizeof buf == 1 + SpxProcSig(CALL_ buf, sizeof buf, p) );
-	//	PG_RETURN_CSTRING( NewStr(CALL_ buf, CallAlloc) );
 	PG_RETURN_CSTRING( NewStr(CALL_ buf, call_palloc) );
 }
 
@@ -1684,9 +1654,9 @@ extern SpxPlans SpxPlanQuery(
 	// arg 3 of ‘SPI_prepare’ won't take a ptr to const !!
 	Oid *const paranoia = num_arg_types ? (Oid *) arg_types : no_arg_types;
 	plan.plan = SPI_prepare(sql, num_arg_types, paranoia);
-	if ( SpxPlanNull(plan) )
-		CALL_BUG_OUT( "SPI_prepare(%s) failed, SPI_result = %d: %s",
-			 sql, SPI_result, SpxQueryDecode(SPI_result) );
+	CallAssertMsg( !SpxPlanNull(plan),
+		"SPI_prepare(%s) failed, SPI_result = %d: %s",
+		sql, SPI_result, SpxQueryDecode(SPI_result) );
 	plan.plan = SPI_saveplan(plan.plan);
 	CALL_DEBUG_OUT( "%s -> " SPX_PLAN_FMT, sql, SPX_PLAN_VAL(plan) );
 	return plan;
@@ -1721,7 +1691,7 @@ extern Datum RowColDatum( CALLS_ const int row, const int col,
 	const int col1 = col+1;
 	CALL_LINK();
 	AssertSPX(_CALL_);
-	CALL_DEBUG_OUT( "%d, %d ...", row, col );
+	CALL_DEBUG_OUT( "row %d col %d", row, col );
 	CallAssertMsg( SPI_processed > row,
 		"row %d, col %d, SPI_processed %d",
 		row, col, (int) SPI_processed	);
@@ -1903,14 +1873,15 @@ extern SpxText RowColText(CALLS_ int row, int col, ALLOCATOR_PTR(alloc)) {
 }
 #endif
 
+#if 0
 extern SpxText RowColText(CALLS_ int row, int col, bool *is_null_ret) {
 	CALL_LINK();
 	CallAssert(is_null_ret);
-	SpxTypeOids result_type;
+	SpxTypeOids actual_type;
 	SpxText ret;
-	const Datum d = RowColDatum(CALL_ row, col, &result_type, is_null_ret);
-	if ( !*is_null_ret && result_type.type_oid != Text_Type.type_oid ) {
-		CALL_WARN_OUT("actual regtype is %d", result_type.type_oid);
+	const Datum d = RowColDatum(CALL_ row, col, &actual_type, is_null_ret);
+	if ( !*is_null_ret && actual_type.type_oid != Text_Type.type_oid ) {
+		CALL_WARN_OUT("actual regtype is %d", actual_type.type_oid);
 		*is_null_ret = 1;
 		ret.varchar = 0;
 		return ret;
@@ -1922,15 +1893,46 @@ extern SpxText RowColText(CALLS_ int row, int col, bool *is_null_ret) {
 		if ( *is_null_ret )
 			CALL_DEBUG_OUT("--> NULL");
 		else {
-			TEXT_BUFFER_TMP_STR(d, str)
+			TEXT_BUFFER_TMP_STR(ret.varchar, str)
 			CALL_DEBUG_OUT("--> %s", str);
 		}
 	}
 	return ret;
 }
+#endif
+
+// we're copying a whole tuple when we're only interested in one field
+// unfortunately, the current PostgreSQL SPI API makes it hard to copy just one field
+// fortunately, we're usually using this on a singleton tuple
+extern SpxText RowColText(CALLS_ int row, int col, bool *is_null_ret) {
+	CALL_LINK();
+	SpxText ret;
+	int col1 = col + 1;
+	CallAssert(is_null_ret);
+	int num_cols = SPI_tuptable->tupdesc->natts;
+	CallAssertMsg( row >= 0 && row < SPI_processed,
+		"row %d, col %d, SPI_processed %d",
+		row, col, (int) SPI_processed	);
+	CallAssertMsg( col >= 0 && col < num_cols,
+		"row %d, col %d, num_cols %d",
+		row, col, num_cols	);
+	SpxTypeOids actual_type;
+	actual_type.type_oid = SPI_gettypeid(SPI_tuptable->tupdesc, col1);
+	if ( actual_type.type_oid != Text_Type.type_oid ) {
+		CALL_WARN_OUT("actual regtype is %d", actual_type.type_oid);
+		*is_null_ret = 1;
+		ret.varchar = 0;
+		return ret;
+	}
+	HeapTuple ht = SpxCopyTuple(CALL_ row);
+	const Datum d = SpxTupleField(CALL_ ht,  col, Text_Type, is_null_ret);
+	ret.varchar = *is_null_ret ? (text *) NULL : DatumGetTextPP(d);
+	return ret;
+}
 
 // Returns 0 for NULL
 // OK to not provide an is_null_ret pointer
+// Are we sure this works with toasted or packed datums?
 extern size_t RowColTextLen(CALLS_ int row, int col, bool *is_null_ret) {
 	CALL_LINK();
 	bool is_null, *const is_null_ptr = is_null_ret ?: &is_null;
@@ -1939,10 +1941,38 @@ extern size_t RowColTextLen(CALLS_ int row, int col, bool *is_null_ret) {
 		CALL_DEBUG_OUT("--> NULL");
 		return 0;
 	}
-	size_t len = SpxTextOctetLen(text_datum);
+	size_t len = SpxTextOctetLen(SpxDatumVarlena(text_datum));
 	CALL_DEBUG_OUT("--> %zu", len);
 	return len;
 }
+
+#if 0
+// Copy the varlena datum into fresh storage
+struct varlena *
+SpxCopyDatum(CALLS_ struct varlena *datum, ALLOCATOR_PTR(alloc)) {
+	CALL_LINK();
+	size_t size = VARSIZE( SpxVarlenaDatum(datum) );
+	return memcpy( CALL_ALLOC(alloc, size), datum, size );
+}
+
+// Copy the text object into fresh storage
+// We suspect this does NOT work with toasted or packed datums!!
+SpxText
+SpxCopyText(CALLS_ SpxText old_text, ALLOCATOR_PTR(alloc)) {
+	CALLS_LINK();
+	SpxText new_text;
+  if ( DebugLevel() ) {
+		TEXT_BUFFER_TMP_STR(old_text.varchar, str);
+		CALL_DEBUG_OUT("old text %s '%s'", *str ? "=" : "IS", *str ? str : "NULL");
+	}
+	new_text.varchar = SpxCopyDatum(CALL_ old_text.varchar, alloc);
+  if ( DebugLevel() ) {
+		TEXT_BUFFER_TMP_STR(new_text.varchar, str);
+		CALL_DEBUG_OUT("new text %s '%s'", *str ? "=" : "IS", *str ? str : "NULL");
+	}
+	return new_text;
+}
+#endif
 
 // Buffer size must be greater than 0
 // Returns string length, not length stored!
@@ -1960,11 +1990,79 @@ extern size_t RowColTextCopy(
 		*buffer = '\0';
 		return 0;
 	}
-	const size_t text_len = SpxTextOctetLen(text_datum);
+	const size_t text_len = SpxTextOctetLen(SpxDatumVarlena(text_datum));
 	text *const text_ptr = DatumGetTextPP(text_datum);
 	text_to_cstring_buffer(text_ptr, buffer, buffer_size);
 	CALL_DEBUG_OUT("--> room: %zu, len: %zu, text: %s", buffer_size, text_len, buffer);
 	return text_len;
+}
+
+// Copies tuple into upper memory context and returns a
+// pointer to the HeapTupleData structure.  Fields can be
+// accessed as a Datum with SpxTupleField while still in the
+// SPI context.  They are then still valid afterwards.
+HeapTuple SpxCopyTuple(CALLS_ int row ) {
+	CALL_LINK();
+	AssertSPX(_CALL_);
+	CALL_DEBUG_OUT( "row %d", row );
+	CallAssertMsg( SPI_processed > row,
+		"row %d, SPI_processed %d",
+		row, (int) SPI_processed	);
+	return SPI_copytuple(SPI_tuptable->vals[row]);
+}
+
+/* Return a specific field from a tuple which is either part
+	 of a result set or has been copied from a result set
+	 which is still present, i.e. we need to still be in the
+	 same SPI context of the query which generated the
+	 original tuple.  We currently do thorough checking, even
+	 though it has probably been done by our callers.  If this
+	 is an extended attribute field, i.e. one whose value does
+	 not fit into one machine word, it will case to be valid
+	 once its memory context is reclaimed, i.e. if its part of
+	 a result set, it will be invalid once you call
+	 SPI_finish, so consider using SpxCopyTuple first!
+ */
+Datum SpxTupleField(
+	CALLS_ HeapTuple tup, int col, SpxTypeOids expected_type, bool *is_null_ret
+) {
+	const int col1 = col + 1;
+	CALL_LINK();
+	AssertSPX(_CALL_);
+	CALL_DEBUG_OUT( "col %d", col );
+	CallAssert( is_null_ret );
+	int num_cols = SPI_tuptable->tupdesc->natts;
+	CallAssertMsg( col >= 0 && col < num_cols,
+		"col %d, num_cols %d",
+		col, num_cols	);
+	SpxTypeOids actual_type;
+	actual_type.type_oid = SPI_gettypeid(SPI_tuptable->tupdesc, col1);
+	// this should really be CallAssertMsg!!!
+	if ( actual_type.type_oid != expected_type.type_oid ) {
+		CALL_WARN_OUT(
+			"regtypes: actual %d != expected %d; returning NULL!",
+			actual_type.type_oid, expected_type.type_oid
+		);
+		*is_null_ret = 1;
+		return (Datum) NULL;
+	}
+	//	heap_getattr(tup, attnum, tupleDesc, isnull)
+	Datum ret = heap_getattr(tup, col1, SPI_tuptable->tupdesc, is_null_ret);
+	if ( ! (int) ret || *is_null_ret ) {
+		if ( (int) ret || !*is_null_ret )
+			CALL_WARN_OUT("!ret: %d, is_null: %d", ! (int) ret, *is_null_ret);
+		*is_null_ret = 1;
+		return (Datum) NULL;
+	}
+  if ( DebugLevel() && expected_type.type_oid == Text_Type.type_oid ) {
+		if ( *is_null_ret )
+			CALL_DEBUG_OUT("--> NULL");
+		else {
+			TEXT_BUFFER_TMP_STR(SpxDatumVarlena(ret), str);
+			CALL_DEBUG_OUT("--> %s", str);
+		}
+	}
+	return ret;
 }
 
 // execute a query plan returning status
@@ -1993,8 +2091,8 @@ extern int SpxAccessDB(
 static void Update1(CALLS_ SpxPlans plan, Datum args[]) {
 	CALLS_LINK();
 	CallAssertMsg(
-	SpxUpdateDB(plan, args, 1) == 1,
-	"SPI_processed  %d", (int) SPI_processed
+		SpxUpdateDB(plan, args, 1) == 1,
+		"SPI_processed  %d", (int) SPI_processed
 	);
 }
 
@@ -2146,6 +2244,16 @@ extern Datum SpxQueryTypedDatum( CALLS_ SpxPlans plan, Datum args[],
 	return RowColTypedDatum(CALL_ 0, 0, expected, is_null_ret);
 }
 
+#if 0
+// execute a query plan returning a VarChar or NULL result_type
+SpxText 
+SpxQueryText(CALLS_ SpxPlans plan, Datum args[], bool *is_null_ret) {
+	CALLS_LINK();
+	Query1(CALL_ plan, args);
+	return RowColText(CALL_ 0, 0, is_null_ret);
+}
+#endif
+
 // execute a query plan returning a VarChar or NULL result_type
 SpxText 
 SpxQueryText(CALLS_ SpxPlans plan, Datum args[], bool *is_null_ret) {
@@ -2293,15 +2401,15 @@ ALLOCATOR_FUNCTION(call_palloc) {
 	// Musn't use in debugging code -> infinite regress!!
 	// Guard against _CALL_ being NULL, not just here???
 	// so if we keep it we need to make it conditional!!!
-	//	AssertNotSPX(_CALL_);
-	CallAssert(size < MaxAllocationSize);
+	AssertNotSPX(_CALL_);
+	CallAssertMsg(size < MaxAllocationSize, "size: %zd", size);
 	return palloc(size);
 }
 
 ALLOCATOR_FUNCTION(call_SPI_palloc) {
 	CALL_LINK();
 	AssertSPX(_CALL_);
-	CallAssert(size < MaxAllocationSize);
+	CallAssertMsg(size < MaxAllocationSize, "size: %zd", size);
 	return SPI_palloc(size);
 }
 
@@ -2358,8 +2466,7 @@ CStringToText( CALLS_ UtilStr s, ALLOCATOR_PTR(alloc) ) {
 UtilStr
 TextToCString( CALLS_ const text *const t, ALLOCATOR_PTR(alloc) ) {
 	CALL_LINK();
-	/* must cast away the const, unfortunately */
-	text	  *tunpacked = pg_detoast_datum_packed((struct varlena *) t);
+	text	  *tunpacked = pg_detoast_datum_packed(SpxMutableVarlenaPtr(t));
 	size_t	len = VARSIZE_ANY_EXHDR(tunpacked);
 	char	  *result;
 
@@ -2373,6 +2480,7 @@ TextToCString( CALLS_ const text *const t, ALLOCATOR_PTR(alloc) ) {
 	return result;
 }
 
+#if 0
 // NULL && empty strings get a new 1-byte '\0'-terminated buffer
 // We need this to avoid infinite regress when used in debugging
 // code which is called by NewStr!
@@ -2381,6 +2489,7 @@ StrPtr AllocStr( Str old_str, void *(*alloc)(size_t) ) {
 	Str old = old_str ?: "";
 	return strcpy( alloc( strlen(old) + 1 ), old );
 }
+#endif
 
 // NULL => NULL
 // all other strings (including empty strings) will be reallocated
@@ -2620,7 +2729,7 @@ static inline SpxArrayInfo ZeroArrayInfo(
 ) {
 	CALL_LINK();
 	CallAssert(a == 0 || alloc == 0);
-	static const struct array_info zip;
+	static const struct array_info zip; // zero filled because static
 	if (a == 0) a = CALL_ALLOC(alloc, sizeof *a );
 	*a = zip;
 	a->dims = a->dims_array;
